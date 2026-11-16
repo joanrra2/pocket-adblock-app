@@ -135,6 +135,7 @@ fun HomeScreen(
                 modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
             )
             (message ?: notice)?.let { Text(it, color = Tokens.warn, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp)) }
+            if (boards.isEmpty()) Text(strings.noBoards, color = Tokens.muted, fontSize = 14.sp)
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(bottom = 96.dp),

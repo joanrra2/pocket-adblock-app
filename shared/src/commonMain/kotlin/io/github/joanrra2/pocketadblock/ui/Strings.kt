@@ -37,6 +37,7 @@ class Strings(
     val defaultPasswordNotice: String,
     // Home
     val boardsTitle: String,
+    val noBoards: String,
     val add: String,
     val open: String,
     val pause: String,
@@ -104,6 +105,7 @@ class Strings(
             checking = "Checking…",
             defaultPasswordNotice = "This board still uses the factory password, so the app won't save it. Change it in Settings → Admin login.",
             boardsTitle = "Boards",
+            noBoards = "No boards yet. Tap + Add to find the ones on this Wi-Fi.",
             add = "+ Add",
             open = "Open",
             pause = "Pause…",
@@ -167,6 +169,7 @@ class Strings(
             checking = "Comprobando…",
             defaultPasswordNotice = "Esta placa aún usa la contraseña de fábrica, así que la app no la guarda. Cámbiala en Ajustes → Usuario administrador.",
             boardsTitle = "Placas",
+            noBoards = "A�n no hay placas. Pulsa + A�adir para buscar las de esta Wi-Fi.",
             add = "+ Añadir",
             open = "Abrir",
             pause = "Pausar…",

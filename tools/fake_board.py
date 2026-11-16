@@ -14,6 +14,7 @@ import base64
 import json
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs
 
 USER, PASSWORD = "admin", "test-password-123"
 EXPECTED = "Basic " + base64.b64encode(f"{USER}:{PASSWORD}".encode()).decode()
@@ -56,6 +57,27 @@ class Handler(BaseHTTPRequestHandler):
             print(f"200 {self.path}")
             return self.send(200, json.dumps(STATUS).encode(), "application/json")
         self.send(404, b"not found", "text/plain")
+
+    def do_POST(self):
+        # POST /api/blocking mode=on|off|pause&minutes=N, like web_server.cpp postBlocking().
+        if self.path != "/api/blocking":
+            return self.send(404, b"not found", "text/plain")
+        if self.headers.get("Authorization") != EXPECTED:
+            return self.send(401, b"authentication required", "text/plain")
+        if self.headers.get("X-Requested-With") != "sinkhole":
+            return self.send(403, b'{"ok":false,"message":"missing X-Requested-With header"}', "application/json")
+        form = parse_qs(self.rfile.read(int(self.headers.get("Content-Length", 0))).decode())
+        mode = form.get("mode", [""])[0]
+        dns = STATUS["dns"]
+        if mode == "pause":
+            minutes = int(form.get("minutes", ["0"])[0] or 0)
+            if not 1 <= minutes <= 1440:
+                return self.send(400, b'{"ok":false,"message":"minutes: 1..1440"}', "application/json")
+            dns["blocking"], dns["resumeIn"] = False, minutes * 60
+        else:
+            dns["blocking"], dns["resumeIn"] = mode == "on", 0
+        print(f"200 POST /api/blocking {mode} {form.get('minutes', [''])[0]}")
+        self.send(200, b'{"ok":true,"message":"ok"}', "application/json")
 
     def send(self, code, body, ctype):
         self.send_response(code)
