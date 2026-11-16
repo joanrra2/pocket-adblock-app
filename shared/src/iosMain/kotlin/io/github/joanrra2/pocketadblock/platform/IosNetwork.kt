@@ -15,9 +15,9 @@ import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.value
 import platform.posix.AF_INET
-import platform.posix.freeifaddrs
-import platform.posix.getifaddrs
-import platform.posix.ifaddrs
+import platform.darwin.freeifaddrs
+import platform.darwin.getifaddrs
+import platform.darwin.ifaddrs
 import platform.posix.sockaddr
 import platform.posix.sockaddr_in
 

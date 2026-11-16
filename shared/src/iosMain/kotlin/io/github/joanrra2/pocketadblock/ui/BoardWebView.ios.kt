@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.UIKitView
 import io.github.joanrra2.pocketadblock.board.BoardAddress
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.readValue
 import platform.CoreGraphics.CGRectZero
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLAuthenticationChallenge
@@ -103,7 +104,7 @@ private class WebDelegate(
             !basicFromBoard -> completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, null)
             didReceiveAuthenticationChallenge.previousFailureCount < 2 -> completionHandler(
                 NSURLSessionAuthChallengeUseCredential,
-                NSURLCredential.credentialWithUser(user, password, NSURLCredentialPersistence.NSURLCredentialPersistenceForSession),
+                NSURLCredential(user = user, password = password, persistence = NSURLCredentialPersistence.NSURLCredentialPersistenceForSession),
             )
             else -> {
                 completionHandler(NSURLSessionAuthChallengeCancelAuthenticationChallenge, null)
