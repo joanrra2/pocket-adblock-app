@@ -54,6 +54,32 @@ class BoardClientTest {
     }
 
     @Test
+    fun pauseSendsTheFormTheFirmwareExpects() = runTest {
+        var seen: String? = null
+        val c = BoardClient(HttpClient(MockEngine { req ->
+            val body = (req.body as io.ktor.http.content.OutgoingContent.ByteArrayContent).bytes().decodeToString()
+            seen = "${req.method.value} ${req.url.encodedPath} csrf=${req.headers["X-Requested-With"]} " +
+                "auth=${req.headers[io.ktor.http.HttpHeaders.Authorization] != null} $body"
+            respond("""{"ok":true,"message":"ok"}""", HttpStatusCode.OK)
+        }))
+        assertEquals(null, c.setBlocking(board, TEST_USER, TEST_PASSWORD, BoardClient.Blocking.Pause(30)))
+        assertEquals("POST /api/blocking csrf=sinkhole auth=true mode=pause&minutes=30", seen)
+        c.setBlocking(board, TEST_USER, TEST_PASSWORD, BoardClient.Blocking.On)
+        assertTrue(seen!!.endsWith("mode=on"))
+        c.setBlocking(board, TEST_USER, TEST_PASSWORD, BoardClient.Blocking.Off)
+        assertTrue(seen!!.endsWith("mode=off"))
+    }
+
+    @Test
+    fun pauseReportsTheBoardsError() = runTest {
+        val c = BoardClient(HttpClient(MockEngine {
+            respond("""{"ok":false,"message":"missing X-Requested-With header"}""", HttpStatusCode.Forbidden)
+        }))
+        val err = c.setBlocking(board, TEST_USER, TEST_PASSWORD, BoardClient.Blocking.On)
+        assertTrue(err!!.startsWith("HTTP 403"), err)
+    }
+
+    @Test
     fun realmHeader() {
         assertTrue(BoardClient.isSinkholeRealm("Basic realm=\"sinkhole\", charset=\"UTF-8\""))
         assertTrue(BoardClient.isSinkholeRealm("basic realm=sinkhole"))

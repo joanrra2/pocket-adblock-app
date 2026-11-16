@@ -2,12 +2,15 @@ package io.github.joanrra2.pocketadblock.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -16,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
@@ -24,20 +28,31 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.joanrra2.pocketadblock.board.BoardClient
-import io.github.joanrra2.pocketadblock.discovery.FoundBoard
+import io.github.joanrra2.pocketadblock.board.BoardStatus
 import kotlinx.coroutines.launch
+
+data class LoginResult(
+    val user: String,
+    val password: String,
+    val status: BoardStatus,
+    val remember: Boolean,
+    val requireUnlock: Boolean,
+)
 
 @Composable
 fun LoginDialog(
-    board: FoundBoard,
+    target: LoginTarget,
     strings: Strings,
     client: BoardClient,
+    canAuthenticate: Boolean,
     onDismiss: () -> Unit,
-    onLoggedIn: (Session) -> Unit,
+    onLoggedIn: (LoginResult) -> Unit,
 ) {
     // "admin" is the documented default user name; the password is never pre-filled.
-    var user by remember { mutableStateOf("admin") }
+    var user by remember { mutableStateOf(target.saved?.user ?: "admin") }
     var password by remember { mutableStateOf("") }
+    var remember by remember { mutableStateOf(true) }
+    var requireUnlock by remember { mutableStateOf(target.saved?.requireUnlock ?: false) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -47,10 +62,10 @@ fun LoginDialog(
         busy = true
         error = null
         scope.launch {
-            val result = client.login(board.address, user.trim(), password)
+            val result = client.login(target.address, user.trim(), password)
             busy = false
             when (result) {
-                is BoardClient.Login.Ok -> onLoggedIn(Session(board, user.trim(), password, result.status))
+                is BoardClient.Login.Ok -> onLoggedIn(LoginResult(user.trim(), password, result.status, remember, requireUnlock))
                 BoardClient.Login.WrongCredentials -> error = strings.wrongCredentials
                 BoardClient.Login.NotBoard -> error = strings.notABoard
                 BoardClient.Login.NotLocal -> error = strings.notLocal
@@ -62,7 +77,7 @@ fun LoginDialog(
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         containerColor = Tokens.s1,
-        title = { Text(strings.loginTitle.fill(board.address.label), fontSize = 17.sp) },
+        title = { Text(strings.loginTitle.fill(target.saved?.name ?: target.address.label), fontSize = 17.sp) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
@@ -83,6 +98,11 @@ fun LoginDialog(
                     keyboardActions = KeyboardActions(onGo = { submit() }),
                     modifier = Modifier.fillMaxWidth().testTag("login-password"),
                 )
+                if (!target.setup) {
+                    Toggle(strings.remember, remember) { remember = it }
+                    if (remember && canAuthenticate) Toggle(strings.requireUnlock, requireUnlock) { requireUnlock = it }
+                    if (remember) Text(strings.rememberNote, color = Tokens.muted, fontSize = 12.sp)
+                }
                 if (busy) Text(strings.checking, color = Tokens.muted, fontSize = 13.sp)
                 error?.let { Text(it, color = Tokens.bad, fontSize = 13.sp, modifier = Modifier.testTag("login-error")) }
             }
@@ -96,4 +116,16 @@ fun LoginDialog(
             TextButton(onClick = onDismiss, enabled = !busy) { Text(strings.cancel) }
         },
     )
+}
+
+@Composable
+private fun Toggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(checkedTrackColor = Tokens.accent, uncheckedTrackColor = Tokens.s2),
+        )
+        Text(label, color = Tokens.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
+    }
 }

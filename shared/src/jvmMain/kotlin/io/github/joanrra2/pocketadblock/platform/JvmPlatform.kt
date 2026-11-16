@@ -23,6 +23,13 @@ class JvmPlatform(private val network: LocalNetwork? = null) : Platform {
 
     override fun openInBrowser(url: String) = Unit
 
+    override val settings: KeyValueStore = MemoryStore()
+    override val secrets: KeyValueStore = MemoryStore()
+
+    override fun canAuthenticate(): Boolean = false
+
+    override suspend fun authenticate(title: String, subtitle: String, cancel: String): Boolean = true
+
     private fun firstPrivateIpv4(): LocalNetwork? {
         for (nif in NetworkInterface.getNetworkInterfaces().toList()) {
             if (!nif.isUp || nif.isLoopback || nif.isVirtual) continue

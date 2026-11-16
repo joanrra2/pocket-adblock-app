@@ -14,7 +14,11 @@ data class BoardStatus(
     val wifi: Wifi = Wifi(),
     val dns: Dns = Dns(),
     val blocklist: Blocklist = Blocklist(),
+    val firmware: Firmware = Firmware(),
 ) {
+    @Serializable
+    data class Firmware(val latest: String = "", val available: Boolean = false)
+
     @Serializable
     data class Wifi(val ssid: String = "", val ip: String = "")
 

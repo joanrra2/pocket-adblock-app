@@ -24,7 +24,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.github.joanrra2.pocketadblock.discovery.FoundVia
 import kotlin.math.roundToLong
 
 @Composable
@@ -78,9 +77,9 @@ fun BoardScreen(
             Text("${formatInt(st.queries, es)} ${strings.queries}", color = Tokens.muted, fontSize = 12.sp)
             Text("${formatInt(st.blocklist.count, es)} ${strings.listSize}", color = Tokens.muted, fontSize = 12.sp)
         }
-        if (session.board.via == FoundVia.SetupAccessPoint) {
+        listOfNotNull(session.notice, if (session.setup) strings.setupHint else null).forEach { note ->
             Text(
-                strings.setupHint,
+                note,
                 color = Tokens.warn,
                 fontSize = 12.sp,
                 modifier = Modifier.fillMaxWidth().background(Tokens.s2).padding(horizontal = 16.dp, vertical = 8.dp),

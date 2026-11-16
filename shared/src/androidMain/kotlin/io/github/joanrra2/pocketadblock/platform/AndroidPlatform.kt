@@ -1,19 +1,30 @@
 package io.github.joanrra2.pocketadblock.platform
 
-import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.os.Build
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
+import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import io.github.joanrra2.pocketadblock.net.LocalNetwork
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.net.Inet4Address
 import java.util.Locale
+import kotlin.coroutines.resume
 
-class AndroidPlatform(private val context: Context) : Platform {
+class AndroidPlatform(private val activity: FragmentActivity) : Platform {
+    private val context = activity.applicationContext
 
     override val mdns: MdnsBrowser = AndroidMdns(context)
+    override val settings: KeyValueStore = PrefsStore(context, "app")
+    override val secrets: KeyValueStore = KeystoreStore(context)
 
     /** The IPv4 address on Wi-Fi (or Ethernet), even when mobile data is the default network. */
     @Suppress("DEPRECATION") // allNetworks: still the simplest way to look at every network
@@ -43,4 +54,36 @@ class AndroidPlatform(private val context: Context) : Platform {
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { context.startActivity(intent) }
     }
+
+    // Fingerprint/face, or the screen lock PIN/pattern where Android allows combining them.
+    private val authenticators: Int
+        get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) BIOMETRIC_WEAK or DEVICE_CREDENTIAL else BIOMETRIC_WEAK
+
+    override fun canAuthenticate(): Boolean =
+        BiometricManager.from(activity).canAuthenticate(authenticators) == BiometricManager.BIOMETRIC_SUCCESS
+
+    override suspend fun authenticate(title: String, subtitle: String, cancel: String): Boolean =
+        suspendCancellableCoroutine { cont ->
+            val prompt = BiometricPrompt(
+                activity,
+                ContextCompat.getMainExecutor(activity),
+                object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                        if (cont.isActive) cont.resume(true)
+                    }
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                        if (cont.isActive) cont.resume(false)
+                    }
+                    // onAuthenticationFailed: a finger that didn't match; the prompt lets the user retry.
+                },
+            )
+            val info = BiometricPrompt.PromptInfo.Builder()
+                .setTitle(title)
+                .setSubtitle(subtitle)
+                .setAllowedAuthenticators(authenticators)
+                .apply { if (authenticators and DEVICE_CREDENTIAL == 0) setNegativeButtonText(cancel) }
+                .build()
+            prompt.authenticate(info)
+            cont.invokeOnCancellation { prompt.cancelAuthentication() }
+        }
 }

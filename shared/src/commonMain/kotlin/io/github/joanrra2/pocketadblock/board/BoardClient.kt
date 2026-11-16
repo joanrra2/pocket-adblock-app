@@ -3,10 +3,13 @@ package io.github.joanrra2.pocketadblock.board
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.timeout
+import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
+import io.ktor.http.isSuccess
+import io.ktor.http.parameters
 import kotlinx.coroutines.CancellationException
 import kotlin.io.encoding.Base64
 
@@ -51,9 +54,7 @@ class BoardClient(engineClient: HttpClient, private val logFailures: Boolean = f
                     socketTimeoutMillis = timeoutMs
                 }
             }
-            val auth = r.headers[HttpHeaders.WWWAuthenticate]
-            if (logFailures) println("PocketProbe ${address.label}: HTTP ${r.status.value} auth=$auth")
-            if (r.status.value == 401 && isSinkholeRealm(auth)) Probe.Board
+            if (r.status.value == 401 && isSinkholeRealm(r.headers[HttpHeaders.WWWAuthenticate])) Probe.Board
             else Probe.NotBoard
         } catch (e: CancellationException) {
             throw e
@@ -84,6 +85,45 @@ class BoardClient(engineClient: HttpClient, private val logFailures: Boolean = f
             throw e
         } catch (e: Exception) {
             Login.Unreachable(e.message ?: e::class.simpleName ?: "error")
+        }
+    }
+
+    /** How to change blocking with POST /api/blocking. */
+    sealed interface Blocking {
+        data object On : Blocking
+        /** Off until turned back on (the board remembers it across restarts). */
+        data object Off : Blocking
+        /** Paused for 1..1440 minutes, then back on by itself. */
+        data class Pause(val minutes: Int) : Blocking
+    }
+
+    /** Changes blocking. Returns null on success, or the reason it failed. */
+    suspend fun setBlocking(address: BoardAddress, user: String, password: String, change: Blocking): String? {
+        if (!address.isLocal) return "not a local address"
+        return try {
+            val r = http.submitForm(
+                url = address.url("/api/blocking"),
+                formParameters = parameters {
+                    when (change) {
+                        Blocking.On -> append("mode", "on")
+                        Blocking.Off -> append("mode", "off")
+                        is Blocking.Pause -> {
+                            append("mode", "pause")
+                            append("minutes", change.minutes.toString())
+                        }
+                    }
+                },
+            ) {
+                header(HttpHeaders.Authorization, basicAuth(user, password))
+                // The firmware refuses changes without it (CSRF guard, web_server.cpp).
+                header("X-Requested-With", "sinkhole")
+                timeout { requestTimeoutMillis = 5000; connectTimeoutMillis = 4000 }
+            }
+            if (r.status.isSuccess()) null else "HTTP ${r.status.value}: ${r.bodyAsText().take(120)}"
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            e.message ?: e::class.simpleName ?: "error"
         }
     }
 

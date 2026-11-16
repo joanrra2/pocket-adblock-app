@@ -24,6 +24,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -57,8 +58,11 @@ fun BoardsScreen(
     client: BoardClient,
     discovery: Discovery,
     notice: String?,
+    savedAddresses: Set<BoardAddress>,
+    onBack: (() -> Unit)?,
     onConnect: (FoundBoard) -> Unit,
 ) {
+    PlatformBackHandler(enabled = onBack != null) { onBack?.invoke() }
     var state by remember { mutableStateOf(DiscoveryState(running = true)) }
     var run by remember { mutableIntStateOf(0) }
     val typed = remember { mutableStateListOf<FoundBoard>() }
@@ -97,7 +101,17 @@ fun BoardsScreen(
         modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(strings.appName, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Tokens.text)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (onBack != null) {
+                TextButton(onClick = onBack, modifier = Modifier.testTag("search-back")) { Text("‹", fontSize = 24.sp) }
+            }
+            Text(
+                if (onBack != null) strings.searchTitle else strings.appName,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = Tokens.text,
+            )
+        }
 
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             val net = state.network
@@ -127,7 +141,7 @@ fun BoardsScreen(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            items(boards, key = { it.address.label }) { BoardCard(it, strings, onConnect) }
+            items(boards, key = { it.address.label }) { BoardCard(it, it.address in savedAddresses, strings, onConnect) }
             if (!state.running && boards.isEmpty()) {
                 item { Text(strings.foundNone, color = Tokens.muted, fontSize = 13.sp) }
             }
@@ -159,7 +173,7 @@ fun BoardsScreen(
 }
 
 @Composable
-private fun BoardCard(board: FoundBoard, strings: Strings, onConnect: (FoundBoard) -> Unit) {
+private fun BoardCard(board: FoundBoard, saved: Boolean, strings: Strings, onConnect: (FoundBoard) -> Unit) {
     val setup = board.via == FoundVia.SetupAccessPoint
     Row(
         modifier = Modifier
@@ -180,7 +194,7 @@ private fun BoardCard(board: FoundBoard, strings: Strings, onConnect: (FoundBoar
                     FoundVia.Sweep -> strings.viaSweep
                     FoundVia.SetupAccessPoint -> strings.viaSetup
                     FoundVia.Typed -> strings.viaTyped
-                },
+                } + if (saved) " · ${strings.savedTag}" else "",
                 color = Tokens.muted,
                 fontSize = 12.sp,
             )
