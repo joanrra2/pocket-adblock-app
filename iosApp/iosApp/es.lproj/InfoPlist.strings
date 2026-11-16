@@ -1,0 +1,4 @@
+/* Spanish texts for the permission prompts. */
+"CFBundleDisplayName" = "Pocket AdBlock";
+"NSLocalNetworkUsageDescription" = "Pocket AdBlock busca tus placas en esta Wi-Fi para mostrar y abrir sus ajustes.";
+"NSFaceIDUsageDescription" = "Face ID protege los ajustes de una placa si lo activas.";
