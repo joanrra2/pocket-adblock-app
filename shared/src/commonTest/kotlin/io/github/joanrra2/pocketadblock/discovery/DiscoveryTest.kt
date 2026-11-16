@@ -6,17 +6,23 @@ import io.github.joanrra2.pocketadblock.board.fakeLan
 import io.github.joanrra2.pocketadblock.net.Ipv4
 import io.github.joanrra2.pocketadblock.net.LocalNetwork
 import io.github.joanrra2.pocketadblock.platform.MdnsBrowser
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class DiscoveryTest {
+    // mDNS results go through the mock HTTP engine, which on iOS answers on another
+    // thread: run those tests on the real clock so the mDNS grace period isn't skipped.
+    private suspend fun <T> realTime(block: suspend () -> T): T = withContext(Dispatchers.Default) { block() }
+
     private val home = LocalNetwork(Ipv4.parse("192.168.18.12")!!, 24)
 
     @Test
@@ -38,14 +44,14 @@ class DiscoveryTest {
         val client = BoardClient(fakeLan(boards = setOf("192.168.18.23")))
         // mDNS names the board, a printer that isn't a board, and the board again.
         val mdns = MdnsBrowser { flow { emit("192.168.18.23"); emit("192.168.18.40"); emit("192.168.18.23") } }
-        val end = Discovery(client, mdns, { home }, mdnsGraceMs = 10).search().last()
+        val end = realTime { Discovery(client, mdns, { home }, mdnsGraceMs = 3000).search().last() }
         assertEquals(listOf(BoardAddress("192.168.18.23")), end.boards.map { it.address })
     }
 
     @Test
     fun withoutWifiOnlyMdnsCanFindBoards() = runTest {
         val client = BoardClient(fakeLan(boards = setOf("10.0.0.5")))
-        val end = Discovery(client, { flow { emit("10.0.0.5") } }, { null }, mdnsGraceMs = 10).search().last()
+        val end = realTime { Discovery(client, { flow { emit("10.0.0.5") } }, { null }, mdnsGraceMs = 3000).search().last() }
         assertEquals(0, end.sweepTotal)
         assertEquals(listOf(FoundBoard(BoardAddress("10.0.0.5"), FoundVia.Mdns)), end.boards)
     }
