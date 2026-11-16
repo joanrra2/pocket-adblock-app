@@ -1,24 +1,26 @@
+@file:OptIn(ExperimentalForeignApi::class)
+
 package io.github.joanrra2.pocketadblock.platform
 
 import io.github.joanrra2.pocketadblock.net.LocalNetwork
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.darwin.Darwin
-import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.Foundation.NSLocale
 import platform.Foundation.NSURL
 import platform.Foundation.NSUserDefaults
 import platform.Foundation.currentLocale
 import platform.Foundation.languageCode
+import platform.LocalAuthentication.LAContext
+import platform.LocalAuthentication.LAPolicyDeviceOwnerAuthentication
 import platform.UIKit.UIApplication
+import kotlin.coroutines.resume
 
-/**
- * iPhone. Milestone M2 fills in mDNS (NWBrowser), the phone's address (getifaddrs), the
- * Keychain, Face ID and the web view. Until then passwords are kept in memory only.
- */
 class IosPlatform : Platform {
-    override val mdns: MdnsBrowser = MdnsBrowser { emptyFlow() }
+    override val mdns: MdnsBrowser = IosMdns()
 
-    override fun localNetwork(): LocalNetwork? = null
+    override fun localNetwork(): LocalNetwork? = wifiIpv4()
 
     override fun httpClient(): HttpClient = HttpClient(Darwin)
 
@@ -37,10 +39,19 @@ class IosPlatform : Platform {
         }
     }
 
-    // TODO(M2): Keychain. In memory until then, so nothing secret is written unencrypted.
-    override val secrets: KeyValueStore = MemoryStore()
+    override val secrets: KeyValueStore = KeychainStore()
 
-    override fun canAuthenticate(): Boolean = false
+    // Face ID / Touch ID, falling back to the passcode (LAPolicyDeviceOwnerAuthentication).
+    override fun canAuthenticate(): Boolean =
+        LAContext().canEvaluatePolicy(LAPolicyDeviceOwnerAuthentication, error = null)
 
-    override suspend fun authenticate(title: String, subtitle: String, cancel: String): Boolean = true
+    override suspend fun authenticate(title: String, subtitle: String, cancel: String): Boolean =
+        suspendCancellableCoroutine { cont ->
+            val context = LAContext()
+            context.localizedCancelTitle = cancel
+            context.evaluatePolicy(LAPolicyDeviceOwnerAuthentication, localizedReason = "$title. $subtitle") { ok, _ ->
+                if (cont.isActive) cont.resume(ok)
+            }
+            cont.invokeOnCancellation { context.invalidate() }
+        }
 }
