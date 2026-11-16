@@ -19,6 +19,7 @@ import platform.Foundation.NSURLAuthenticationMethodHTTPBasic
 import platform.Foundation.NSURLCredential
 import platform.Foundation.NSURLCredentialPersistence
 import platform.Foundation.NSURLRequest
+import platform.Foundation.create
 import platform.Foundation.NSURLSessionAuthChallengeCancelAuthenticationChallenge
 import platform.Foundation.NSURLSessionAuthChallengeDisposition
 import platform.Foundation.NSURLSessionAuthChallengePerformDefaultHandling
@@ -104,7 +105,7 @@ private class WebDelegate(
             !basicFromBoard -> completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, null)
             didReceiveAuthenticationChallenge.previousFailureCount < 2 -> completionHandler(
                 NSURLSessionAuthChallengeUseCredential,
-                NSURLCredential(user = user, password = password, persistence = NSURLCredentialPersistence.NSURLCredentialPersistenceForSession),
+                NSURLCredential.create(user = user, password = password, persistence = NSURLCredentialPersistence.NSURLCredentialPersistenceForSession),
             )
             else -> {
                 completionHandler(NSURLSessionAuthChallengeCancelAuthenticationChallenge, null)
