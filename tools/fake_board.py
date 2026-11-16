@@ -40,6 +40,11 @@ STATUS = {"version": "0.4.2", "edition": "pro", "hostname": "fake-board", "uptim
           "blocklist": {"count": 140212}}
 
 
+# GET /api/settings (only the MQTT part matters to the app). A made-up test broker.
+SETTINGS = {"hostname": "fake-board", "mqttUri": "mqtts://broker.example.test:8883",
+            "mqttUser": "board", "mqttPrefix": "sinkhole", "haDiscovery": True}
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/":
@@ -55,6 +60,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(b"authentication required")
                 return
             print(f"200 {self.path}")
+            if self.path == "/api/settings":
+                return self.send(200, json.dumps(SETTINGS).encode(), "application/json")
             return self.send(200, json.dumps(STATUS).encode(), "application/json")
         self.send(404, b"not found", "text/plain")
 

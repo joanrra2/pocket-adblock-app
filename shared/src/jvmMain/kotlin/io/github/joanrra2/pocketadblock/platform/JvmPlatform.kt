@@ -23,6 +23,8 @@ class JvmPlatform(private val network: LocalNetwork? = null) : Platform {
 
     override fun openInBrowser(url: String) = Unit
 
+    override fun openPocketWake(link: String): Boolean = false
+
     override val settings: KeyValueStore = MemoryStore()
     override val secrets: KeyValueStore = MemoryStore()
 

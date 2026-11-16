@@ -31,6 +31,12 @@ class IosPlatform : Platform {
         UIApplication.sharedApplication.openURL(nsUrl, emptyMap<Any?, Any>(), null)
     }
 
+    // Pocket Wake on iPhone is a web app: Safari opens it and it reads the #setup link.
+    override fun openPocketWake(link: String): Boolean {
+        openInBrowser(link)
+        return false
+    }
+
     override val settings: KeyValueStore = object : KeyValueStore {
         private val defaults = NSUserDefaults.standardUserDefaults
         override fun get(key: String): String? = defaults.stringForKey(key)

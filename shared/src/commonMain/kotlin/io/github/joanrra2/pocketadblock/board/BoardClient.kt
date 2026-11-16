@@ -88,6 +88,27 @@ class BoardClient(engineClient: HttpClient, private val logFailures: Boolean = f
         }
     }
 
+    /** The board's MQTT settings from GET /api/settings (the board never returns the password). */
+    @kotlinx.serialization.Serializable
+    data class MqttSettings(val mqttUri: String = "", val mqttUser: String = "", val mqttPrefix: String = "")
+
+    /** Reads the MQTT settings, or null when the board can't be read. */
+    suspend fun mqttSettings(address: BoardAddress, user: String, password: String): MqttSettings? {
+        if (!address.isLocal) return null
+        return try {
+            val r = http.get(address.url("/api/settings")) {
+                header(HttpHeaders.Authorization, basicAuth(user, password))
+                timeout { requestTimeoutMillis = 5000; connectTimeoutMillis = 4000 }
+            }
+            if (r.status.value != 200) null
+            else settingsJson.decodeFromString(MqttSettings.serializer(), r.bodyAsText())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     /** How to change blocking with POST /api/blocking. */
     sealed interface Blocking {
         data object On : Blocking
@@ -128,6 +149,8 @@ class BoardClient(engineClient: HttpClient, private val logFailures: Boolean = f
     }
 
     companion object {
+        private val settingsJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
         fun isSinkholeRealm(header: String?): Boolean {
             if (header == null || !header.trim().startsWith("Basic", ignoreCase = true)) return false
             return Regex("""realm\s*=\s*"?sinkhole"?""", RegexOption.IGNORE_CASE).containsMatchIn(header)

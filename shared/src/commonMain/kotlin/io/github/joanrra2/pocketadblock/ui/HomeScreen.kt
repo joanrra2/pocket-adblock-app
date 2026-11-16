@@ -73,12 +73,15 @@ fun HomeScreen(
     unlock: suspend (SavedBoard) -> Boolean,
     onOpen: (SavedBoard) -> Unit,
     onAdd: () -> Unit,
+    openPocketWake: (String) -> Boolean,
 ) {
     val boards by repo.boards.collectAsState()
     val states = remember { mutableStateMapOf<String, CardState>() }
     var relocationTried by remember { mutableStateOf(false) }
     var pauseFor by remember { mutableStateOf<SavedBoard?>(null) }
     var forgetFor by remember { mutableStateOf<SavedBoard?>(null) }
+    var menuFor by remember { mutableStateOf<SavedBoard?>(null) }
+    var wakeFor by remember { mutableStateOf<SavedBoard?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -149,7 +152,7 @@ fun HomeScreen(
                         onOpen = { onOpen(b) },
                         onPause = { pauseFor = b },
                         onResume = { act(b, BoardClient.Blocking.On) },
-                        onMenu = { forgetFor = b },
+                        onMenu = { menuFor = b },
                     )
                 }
             }
@@ -167,6 +170,35 @@ fun HomeScreen(
             pauseFor = null
             act(b, change)
         }
+    }
+    menuFor?.let { b ->
+        AlertDialog(
+            onDismissRequest = { menuFor = null },
+            containerColor = Tokens.s1,
+            title = { Text(b.name, fontSize = 17.sp) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = { menuFor = null; wakeFor = b }, modifier = Modifier.testTag("menu-pocketwake")) {
+                        Text(strings.pwMenu, modifier = Modifier.fillMaxWidth())
+                    }
+                    TextButton(onClick = { menuFor = null; forgetFor = b }, modifier = Modifier.testTag("menu-forget")) {
+                        Text(strings.forget, color = Tokens.bad, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { menuFor = null }) { Text(strings.cancel) } },
+        )
+    }
+    wakeFor?.let { b ->
+        PocketWakeDialog(
+            board = b,
+            password = repo.password(b.id),
+            strings = strings,
+            client = client,
+            openPocketWake = openPocketWake,
+            onDone = { done -> wakeFor = null; done?.let { message = it } },
+        )
     }
     forgetFor?.let { b ->
         AlertDialog(

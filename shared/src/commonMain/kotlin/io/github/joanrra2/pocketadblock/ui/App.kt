@@ -19,6 +19,7 @@ import io.github.joanrra2.pocketadblock.discovery.FoundVia
 import io.github.joanrra2.pocketadblock.platform.Platform
 import io.github.joanrra2.pocketadblock.store.BoardRepository
 import io.github.joanrra2.pocketadblock.store.SavedBoard
+import io.github.joanrra2.pocketadblock.wake.PocketWakeLink
 import kotlinx.coroutines.launch
 
 /** A board page that is open, logged in. */
@@ -122,7 +123,9 @@ fun App(platform: Platform, modifier: Modifier = Modifier) {
                         val saved = repo.find(current.address, current.status.hostname)
                         loginFor = LoginTarget(current.address, current.setup, saved)
                     },
-                    onOpenExternal = platform::openInBrowser,
+                    onOpenExternal = { url ->
+                        if (PocketWakeLink.isSetupLink(url)) platform.openPocketWake(url) else platform.openInBrowser(url)
+                    },
                 )
                 screen == Screen.Search -> BoardsScreen(
                     strings = strings,
@@ -142,6 +145,7 @@ fun App(platform: Platform, modifier: Modifier = Modifier) {
                     unlock = ::unlock,
                     onOpen = ::openSaved,
                     onAdd = { notice = null; screen = Screen.Search },
+                    openPocketWake = platform::openPocketWake,
                 )
             }
             loginFor?.let { target ->

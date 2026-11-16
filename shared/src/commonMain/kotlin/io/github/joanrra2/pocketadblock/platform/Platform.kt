@@ -21,6 +21,12 @@ interface Platform {
     /** Opens a link in the system browser. */
     fun openInBrowser(url: String)
 
+    /**
+     * Hands a Pocket Wake setup link to the Pocket Wake app when it is installed
+     * (Android), otherwise opens its web app. True when the native app took it.
+     */
+    fun openPocketWake(link: String): Boolean
+
     /** Plain app settings (the list of saved boards). Not for passwords. */
     val settings: KeyValueStore
 

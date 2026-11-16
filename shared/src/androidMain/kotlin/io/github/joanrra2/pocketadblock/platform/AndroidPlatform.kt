@@ -12,6 +12,7 @@ import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import io.github.joanrra2.pocketadblock.net.LocalNetwork
+import io.github.joanrra2.pocketadblock.wake.PocketWakeLink
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -57,6 +58,16 @@ class AndroidPlatform(private val activity: FragmentActivity) : Platform {
     override fun openInBrowser(url: String) {
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { context.startActivity(intent) }
+    }
+
+    override fun openPocketWake(link: String): Boolean {
+        // Release first, then a debug build of Pocket Wake (package suffix .debug).
+        for (pkg in listOf(PocketWakeLink.ANDROID_PACKAGE, PocketWakeLink.ANDROID_PACKAGE + ".debug")) {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link)).setPackage(pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (runCatching { context.startActivity(intent) }.isSuccess) return true
+        }
+        openInBrowser(link)
+        return false
     }
 
     // Fingerprint/face, or the screen lock PIN/pattern where Android allows combining them.
