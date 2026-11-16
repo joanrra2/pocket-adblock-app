@@ -28,7 +28,7 @@ data class Session(
 @Composable
 fun App(platform: Platform, modifier: Modifier = Modifier) {
     val strings = remember { Strings.forLanguage(platform.languageCode) }
-    val client = remember { BoardClient(platform.httpClient()) }
+    val client = remember { BoardClient(platform.httpClient(), logFailures = true) }
     val discovery = remember { Discovery(client, platform.mdns, platform::localNetwork) }
     var loggingIn by remember { mutableStateOf<FoundBoard?>(null) }
     var session by remember { mutableStateOf<Session?>(null) }

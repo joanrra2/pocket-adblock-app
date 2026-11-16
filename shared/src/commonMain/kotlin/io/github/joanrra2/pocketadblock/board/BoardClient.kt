@@ -14,7 +14,7 @@ import kotlin.io.encoding.Base64
  * Talks to a board's REST API, the same one its web page uses
  * (components/web/web_server.cpp in the firmware).
  */
-class BoardClient(engineClient: HttpClient) {
+class BoardClient(engineClient: HttpClient, private val logFailures: Boolean = false) {
 
     private val http = engineClient.config {
         install(HttpTimeout)
@@ -51,11 +51,14 @@ class BoardClient(engineClient: HttpClient) {
                     socketTimeoutMillis = timeoutMs
                 }
             }
-            if (r.status.value == 401 && isSinkholeRealm(r.headers[HttpHeaders.WWWAuthenticate])) Probe.Board
+            val auth = r.headers[HttpHeaders.WWWAuthenticate]
+            if (logFailures) println("PocketProbe ${address.label}: HTTP ${r.status.value} auth=$auth")
+            if (r.status.value == 401 && isSinkholeRealm(auth)) Probe.Board
             else Probe.NotBoard
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            if (logFailures) println("PocketProbe ${address.label}: ${e::class.simpleName}: ${e.message}")
             Probe.Unreachable
         }
     }
