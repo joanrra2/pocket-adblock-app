@@ -26,6 +26,10 @@ class AndroidPlatform(private val activity: FragmentActivity) : Platform {
     override val settings: KeyValueStore = PrefsStore(context, "app")
     override val secrets: KeyValueStore = KeystoreStore(context)
 
+    init {
+        WifiBinder.start(context)
+    }
+
     /** The IPv4 address on Wi-Fi (or Ethernet), even when mobile data is the default network. */
     @Suppress("DEPRECATION") // allNetworks: still the simplest way to look at every network
     override fun localNetwork(): LocalNetwork? {

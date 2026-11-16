@@ -7,6 +7,10 @@ plugins {
 // locally). Nothing secret is stored in the repository.
 val releaseKeystore: String? = providers.environmentVariable("POCKETADBLOCK_KEYSTORE_FILE").orNull
 
+// CI: every build gets a higher versionCode; tag builds (v1.2.3) their version name.
+val ciRunNumber: Int? = providers.environmentVariable("GITHUB_RUN_NUMBER").orNull?.toIntOrNull()
+val ciVersion: String? = providers.environmentVariable("POCKETADBLOCK_VERSION").orNull?.removePrefix("v")
+
 android {
     namespace = "io.github.joanrra2.pocketadblock"
     compileSdk {
@@ -17,8 +21,8 @@ android {
         applicationId = "io.github.joanrra2.pocketadblock"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.0.1-m0"
+        versionCode = ciRunNumber ?: 1
+        versionName = ciVersion ?: "0.1.0-dev"
     }
 
     signingConfigs {

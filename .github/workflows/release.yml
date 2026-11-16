@@ -1,0 +1,52 @@
+name: release
+
+# Push a tag like v0.1.0 to build a signed APK and attach it to a GitHub release.
+# Needs these repository secrets (the signing key never lives in the repository):
+#   POCKETADBLOCK_KEYSTORE_B64       base64 of the release keystore (.jks)
+#   POCKETADBLOCK_KEYSTORE_PASSWORD  its password
+#   POCKETADBLOCK_KEY_ALIAS          the key alias
+#   POCKETADBLOCK_KEY_PASSWORD       the key password
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Restore the signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.POCKETADBLOCK_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then echo "::error::POCKETADBLOCK_KEYSTORE_B64 is not set"; exit 1; fi
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "POCKETADBLOCK_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+      - name: Tests and signed release APK
+        env:
+          POCKETADBLOCK_KEYSTORE_PASSWORD: ${{ secrets.POCKETADBLOCK_KEYSTORE_PASSWORD }}
+          POCKETADBLOCK_KEY_ALIAS: ${{ secrets.POCKETADBLOCK_KEY_ALIAS }}
+          POCKETADBLOCK_KEY_PASSWORD: ${{ secrets.POCKETADBLOCK_KEY_PASSWORD }}
+          POCKETADBLOCK_VERSION: ${{ github.ref_name }}
+        run: ./gradlew :shared:jvmTest :androidApp:assembleRelease --stacktrace
+      - name: Name the APK after the version
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          cp androidApp/build/outputs/apk/release/androidApp-release.apk "pocket-adblock-$v.apk"
+          sha256sum "pocket-adblock-$v.apk" > "pocket-adblock-$v.apk.sha256"
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" "pocket-adblock-$v.apk" "pocket-adblock-$v.apk.sha256" \
+            --title "Pocket AdBlock $v" --generate-notes --prerelease
