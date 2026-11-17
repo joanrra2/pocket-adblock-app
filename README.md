@@ -27,6 +27,10 @@ Status: **Android: M1 done** (tested on a real board). **iPhone: M2 in progress*
 - New board on its setup Wi-Fi (phone at 192.168.4.x): the board at 192.168.4.1 is
   marked and opened with a setup hint.
 - Typed addresses (`192.168.1.50`, `sinkhole.local`, `host:port`), local ones only.
+- **Sets up [Pocket Wake](https://github.com/joanrra2/pocket-wake)** (remote Wake-on-LAN
+  over MQTT): a board's menu → *Set up Pocket Wake* reads its broker settings and hands
+  them to the Pocket Wake app with the same setup link as the board's QR code (never a
+  password). On iPhone, and without the Android app, Pocket Wake's web app opens.
 
 ## Build
 
@@ -53,6 +57,11 @@ Check against a real board on your network (sends no password):
 ```bash
 POCKETADBLOCK_IT=1 POCKETADBLOCK_BOARD=192.168.18.23 ./gradlew :shared:jvmTest --tests '*RealBoardCheck*'
 ```
+
+End-to-end test on an Android emulator (GitHub Actions, `.github/workflows/e2e.yml`):
+both apps are installed and `tools/e2e_android.sh` finds the fake board, logs in, saves
+it and checks that Pocket Wake opens with the broker filled in. Screenshots are kept as
+an artifact. The same script runs against a phone over adb.
 
 `tools/fake_board.py` is a fake board (test login `admin` / `test-password-123`) for
 trying the login, the web view and pause without a real board:
