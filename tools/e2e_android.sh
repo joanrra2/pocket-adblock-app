@@ -32,6 +32,23 @@ tap() {
   adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
 }
 
+# Types into the focused password field and checks the number of dots: emulator input
+# sometimes drops or repeats a character. Clears and retries up to 3 times.
+type_password() {
+  local want=${#1} dots
+  for _ in 1 2 3; do
+    sleep 1
+    adb shell input text "$1"
+    sleep 1
+    dots=$(dump | grep -o 'text="•+"' | head -1 | tr -cd '•' | wc -m)
+    [ "$dots" -eq "$want" ] && return 0
+    echo "typed $dots of $want characters, retrying"
+    adb shell input keyevent KEYCODE_MOVE_END
+    for _ in $(seq 1 30); do adb shell input keyevent KEYCODE_DEL; done
+  done
+  fail "could not type the password"
+}
+
 step "fake board on 127.0.0.1:8080, reachable from the emulator"
 python3 -u tools/fake_board.py 8080 > "$OUT/fake_board.log" 2>&1 &
 FAKE_PID=$!
@@ -46,10 +63,12 @@ adb install -r "$WAKE_APK"
 step "Pocket AdBlock: type the address, log in, save"
 adb shell am start -n "$PKG/io.github.joanrra2.pocketadblock.MainActivity"
 tap 'resource-id="address-field"'
+sleep 1
 adb shell input text "127.0.0.1:8080"
+wait_for 'text="127.0.0.1:8080"'
 tap 'resource-id="address-try"'
 tap 'text="Password"'
-adb shell input text "test-password-123"
+type_password "test-password-123"
 # Enter = the password field's Go action (the keyboard would cover the Connect button).
 adb shell input keyevent KEYCODE_ENTER
 wait_for 'text="fake-board"'
