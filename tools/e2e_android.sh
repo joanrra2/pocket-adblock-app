@@ -13,7 +13,8 @@ PKG=io.github.joanrra2.pocketadblock.debug
 WAKE=io.github.joanrra2.pocketwake.debug
 
 shot() { adb exec-out screencap -p > "$OUT/$1.png" || true; }
-dump() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true; adb shell cat /sdcard/ui.xml 2>/dev/null | tr '>' '\n'; }
+# Never fails (set -e + pipefail would end the test silently when one dump misses).
+dump() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true; { adb shell cat /sdcard/ui.xml 2>/dev/null || true; } | tr '>' '\n' || true; }
 fail() { echo "FAIL: $*"; shot "failure"; dump > "$OUT/failure.xml"; exit 1; }
 step() { echo "== $*"; }
 
