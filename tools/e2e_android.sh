@@ -33,7 +33,7 @@ tap() {
 }
 
 step "fake board on 127.0.0.1:8080, reachable from the emulator"
-python3 tools/fake_board.py 8080 > "$OUT/fake_board.log" 2>&1 &
+python3 -u tools/fake_board.py 8080 > "$OUT/fake_board.log" 2>&1 &
 FAKE_PID=$!
 trap 'kill $FAKE_PID 2>/dev/null || true' EXIT
 sleep 1
@@ -50,7 +50,8 @@ adb shell input text "127.0.0.1:8080"
 tap 'resource-id="address-try"'
 tap 'text="Password"'
 adb shell input text "test-password-123"
-tap 'text="Connect"'
+# Enter = the password field's Go action (the keyboard would cover the Connect button).
+adb shell input keyevent KEYCODE_ENTER
 wait_for 'text="fake-board"'
 shot "1-board-page"
 
@@ -75,6 +76,6 @@ adb shell dumpsys activity activities | grep -E "topResumedActivity|mResumedActi
 wait_for 'broker.example.test'
 wait_for 'text="sinkhole"'
 shot "4-pocket-wake"
-grep -q "GET\|200 /api/settings" "$OUT/fake_board.log" || true
+grep -q "200 /api/settings" "$OUT/fake_board.log" || fail "the app never read /api/settings"
 
 echo "PASS: board found, logged in, saved, and its broker handed to Pocket Wake"
