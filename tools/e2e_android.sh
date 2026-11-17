@@ -73,9 +73,14 @@ for _ in $(seq 1 20); do
   sleep 1
 done
 adb shell dumpsys activity activities | grep -E "topResumedActivity|mResumedActivity" | grep -q "$WAKE" || fail "Pocket Wake is not in front"
-wait_for 'broker.example.test'
-wait_for 'text="sinkhole"'
+wait_for 'Filled in from the board'
+wait_for 'text="broker.example.test"'
+wait_for 'text="8883"'
 shot "4-pocket-wake"
+# The topic prefix is further down the form.
+adb shell input swipe 500 1500 500 500 300
+wait_for 'text="sinkhole"'
+shot "5-pocket-wake-prefix"
 grep -q "200 /api/settings" "$OUT/fake_board.log" || fail "the app never read /api/settings"
 
 echo "PASS: board found, logged in, saved, and its broker handed to Pocket Wake"
