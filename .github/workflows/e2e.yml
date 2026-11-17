@@ -1,0 +1,62 @@
+name: e2e
+
+# Both apps on an Android emulator, against the fake board (tools/fake_board.py):
+# find and log in with Pocket AdBlock, then hand the board's broker to Pocket Wake.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      pocketwake_ref:
+        description: Pocket Wake branch or tag to test with
+        default: setup-link-intent
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Get Pocket Wake
+        run: |
+          ref="${{ inputs.pocketwake_ref || 'setup-link-intent' }}"
+          git clone --depth 1 --branch "$ref" https://github.com/joanrra2/pocket-wake.git pocket-wake \
+            || git clone --depth 1 https://github.com/joanrra2/pocket-wake.git pocket-wake
+          git -C pocket-wake log --oneline -1
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Build both debug APKs
+        run: |
+          ./gradlew :androidApp:assembleDebug
+          chmod +x pocket-wake/gradlew
+          (cd pocket-wake && ./gradlew :app:assembleDebug)
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run on the emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash tools/e2e_android.sh androidApp/build/outputs/apk/debug/androidApp-debug.apk pocket-wake/app/build/outputs/apk/debug/app-debug.apk e2e-out
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: e2e-screenshots
+          path: e2e-out
+          if-no-files-found: ignore
