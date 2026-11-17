@@ -78,7 +78,8 @@ wait_for 'text="broker.example.test"'
 wait_for 'text="8883"'
 shot "4-pocket-wake"
 # The topic prefix is further down the form.
-adb shell input swipe 500 1500 500 500 300
+read -r W H < <(adb shell wm size | grep -o '[0-9]\+x[0-9]\+' | tail -1 | tr 'x' ' ')
+adb shell input swipe $((W / 2)) $((H * 3 / 4)) $((W / 2)) $((H / 4)) 300
 wait_for 'text="sinkhole"'
 shot "5-pocket-wake-prefix"
 grep -q "200 /api/settings" "$OUT/fake_board.log" || fail "the app never read /api/settings"
