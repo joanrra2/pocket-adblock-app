@@ -9,7 +9,7 @@ on:
     inputs:
       pocketwake_ref:
         description: Pocket Wake branch or tag to test with
-        default: setup-link-intent
+        default: main
 
 permissions:
   contents: read
