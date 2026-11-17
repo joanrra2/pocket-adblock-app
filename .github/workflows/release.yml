@@ -92,7 +92,10 @@ jobs:
           app=build/ios/Build/Products/Release-iphoneos/PocketAdBlock.app
           test -x "$app/PocketAdBlock" || { echo "::error::no app binary"; ls -la "$app"; exit 1; }
           lipo -info "$app/PocketAdBlock"
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' -c 'Print :CFBundleIdentifier' "$app/Info.plist"
+          got=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Info.plist")
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' -c 'Print :CFBundleVersion' "$app/Info.plist"
+          echo "version $got"
+          [ "$got" = "${v%%-*}" ] || { echo "::error::app version is $got, expected ${v%%-*}"; exit 1; }
           mkdir -p dist Payload
           cp -R "$app" Payload/
           zip -qry "dist/pocket-adblock-$v-unsigned.ipa" Payload
