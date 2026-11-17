@@ -17,9 +17,27 @@ dump() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true; adb 
 fail() { echo "FAIL: $*"; shot "failure"; dump > "$OUT/failure.xml"; exit 1; }
 step() { echo "== $*"; }
 
+# Slow CI emulators sometimes show "<system app> isn't responding" over everything.
+# Answer "Wait" so the test can go on.
+dismiss_anr() {
+  local d b
+  d=$(dump)
+  grep -q "isn't responding" <<<"$d" || return 0
+  echo "closing a system 'isn't responding' dialog"
+  b=$(grep 'text="Wait"' <<<"$d" | tail -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]\+' | tr '\n' ' ' || true)
+  [ -n "$b" ] || return 0
+  set -- $b
+  adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
+  sleep 1
+}
+
 # Waits up to 30 s for a UI element matching the grep pattern.
 wait_for() {
-  for _ in $(seq 1 30); do dump | grep -q -- "$1" && return 0; sleep 1; done
+  for _ in $(seq 1 30); do
+    dismiss_anr
+    dump | grep -q -- "$1" && return 0
+    sleep 1
+  done
   fail "not on screen: $1"
 }
 
@@ -28,6 +46,7 @@ wait_for() {
 tap() {
   local b=""
   for _ in $(seq 1 30); do
+    dismiss_anr
     b=$(dump | grep -- "$1" | tail -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]\+' | tr '\n' ' ' || true)
     [ -n "$b" ] && break
     sleep 1
