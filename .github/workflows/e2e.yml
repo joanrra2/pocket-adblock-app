@@ -52,7 +52,7 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -memory 4096 -cores 4
           script: bash tools/e2e_android.sh androidApp/build/outputs/apk/debug/androidApp-debug.apk pocket-wake/app/build/outputs/apk/debug/app-debug.apk e2e-out
       - uses: actions/upload-artifact@v7
         if: always()

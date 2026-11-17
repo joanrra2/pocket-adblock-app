@@ -17,14 +17,14 @@ dump() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true; adb 
 fail() { echo "FAIL: $*"; shot "failure"; dump > "$OUT/failure.xml"; exit 1; }
 step() { echo "== $*"; }
 
-# Slow CI emulators sometimes show "<system app> isn't responding" over everything.
-# Answer "Wait" so the test can go on.
+# Slow CI emulators sometimes show "<system app> isn't responding" (usually the Pixel
+# Launcher) over everything. Close that app; the apps under test run on their own.
 dismiss_anr() {
   local d b
   d=$(dump)
   grep -q "isn't responding" <<<"$d" || return 0
   echo "closing a system 'isn't responding' dialog"
-  b=$(grep 'text="Wait"' <<<"$d" | tail -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]\+' | tr '\n' ' ' || true)
+  b=$(grep 'text="Close app"' <<<"$d" | tail -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]\+' | tr '\n' ' ' || true)
   [ -n "$b" ] || return 0
   set -- $b
   adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
