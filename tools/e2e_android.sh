@@ -2,15 +2,17 @@
 # End-to-end test on a running Android emulator (or phone):
 #   fake board -> Pocket AdBlock (find, log in, save) -> Set up Pocket Wake -> Pocket Wake
 #   opens with the board's broker filled in.
-# Usage: tools/e2e_android.sh <pocket-adblock-debug.apk> <pocket-wake-debug.apk> [out-dir]
+# Usage: tools/e2e_android.sh <pocket-adblock.apk> <pocket-wake.apk> [out-dir]
+# Debug APKs by default; for release APKs set E2E_APP_PKG=io.github.joanrra2.pocketadblock
+# and E2E_WAKE_PKG=io.github.joanrra2.pocketwake.
 # Uses only test values: the fake board's test login and a made-up broker.
 set -euo pipefail
-APP_APK=${1:?Pocket AdBlock debug APK}
-WAKE_APK=${2:?Pocket Wake debug APK}
+APP_APK=${1:?Pocket AdBlock APK}
+WAKE_APK=${2:?Pocket Wake APK}
 OUT=${3:-e2e-out}
 mkdir -p "$OUT"
-PKG=io.github.joanrra2.pocketadblock.debug
-WAKE=io.github.joanrra2.pocketwake.debug
+PKG=${E2E_APP_PKG:-io.github.joanrra2.pocketadblock.debug}
+WAKE=${E2E_WAKE_PKG:-io.github.joanrra2.pocketwake.debug}
 
 shot() { adb exec-out screencap -p > "$OUT/$1.png" || true; }
 # Never fails (set -e + pipefail would end the test silently when one dump misses).

@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Get Pocket Wake
         run: |
-          ref="${{ inputs.pocketwake_ref || 'setup-link-intent' }}"
+          ref="${{ inputs.pocketwake_ref || 'main' }}"
           git clone --depth 1 --branch "$ref" https://github.com/joanrra2/pocket-wake.git pocket-wake \
             || git clone --depth 1 https://github.com/joanrra2/pocket-wake.git pocket-wake
           git -C pocket-wake log --oneline -1
@@ -35,11 +35,16 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v6
-      - name: Build both debug APKs
+      # Release builds (R8-minified), as people install them, signed with a throwaway
+      # key made here: the real signing keys are only used by the release workflow.
+      - name: Build both release APKs
         run: |
-          ./gradlew :androidApp:assembleDebug
+          keytool -genkeypair -keystore "$RUNNER_TEMP/e2e.jks" -storetype PKCS12 -alias e2e -keyalg RSA -keysize 2048 -validity 7 -storepass e2e-test -keypass e2e-test -dname CN=e2e
+          export POCKETADBLOCK_KEYSTORE_FILE="$RUNNER_TEMP/e2e.jks" POCKETADBLOCK_KEY_ALIAS=e2e POCKETADBLOCK_KEYSTORE_PASSWORD=e2e-test POCKETADBLOCK_KEY_PASSWORD=e2e-test
+          export POCKETWAKE_KEYSTORE_FILE="$RUNNER_TEMP/e2e.jks" POCKETWAKE_KEY_ALIAS=e2e POCKETWAKE_KEYSTORE_PASSWORD=e2e-test POCKETWAKE_KEY_PASSWORD=e2e-test
+          ./gradlew :androidApp:assembleRelease
           chmod +x pocket-wake/gradlew
-          (cd pocket-wake && ./gradlew :app:assembleDebug)
+          (cd pocket-wake && ./gradlew :app:assembleRelease)
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -53,7 +58,7 @@ jobs:
           target: google_apis
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -memory 4096 -cores 4
-          script: bash tools/e2e_android.sh androidApp/build/outputs/apk/debug/androidApp-debug.apk pocket-wake/app/build/outputs/apk/debug/app-debug.apk e2e-out
+          script: E2E_APP_PKG=io.github.joanrra2.pocketadblock E2E_WAKE_PKG=io.github.joanrra2.pocketwake bash tools/e2e_android.sh androidApp/build/outputs/apk/release/androidApp-release.apk pocket-wake/app/build/outputs/apk/release/app-release.apk e2e-out
       - uses: actions/upload-artifact@v7
         if: always()
         with:

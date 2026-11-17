@@ -6,8 +6,24 @@ Android and iPhone app for [Pocket AdBlock](https://github.com/joanrra2/pocket-a
 boards: finds them on your Wi-Fi without knowing their address, remembers the login
 and opens their settings. Home network only; no remote access, no analytics.
 
-Status: **Android: M1 done** (tested on a real board). **iPhone: M2 in progress**
-(builds in CI; not yet run on a device).
+Status: **Android**: tested on a real board; signed APK on the
+[releases page](https://github.com/joanrra2/pocket-adblock-app/releases/latest).
+**iPhone**: no App Store version (no paid Apple developer account); each release has an
+unsigned `.ipa` to sideload with your own Apple ID (see [Install](#install)). Built and
+started on the iPhone simulator in CI; not yet run on a real iPhone.
+
+## Install
+
+- **Android**: download `pocket-adblock-<version>.apk` from the
+  [latest release](https://github.com/joanrra2/pocket-adblock-app/releases/latest) on the
+  phone and open it. Updates install over the previous version.
+- **iPhone**: download `pocket-adblock-<version>-unsigned.ipa` and sign it with your own
+  Apple ID using a sideloading tool on a computer, such as
+  [Sideloadly](https://sideloadly.io) or [AltStore](https://altstore.io). Then trust your
+  Apple ID in Settings → General → VPN & Device Management, turn on Developer Mode
+  (Settings → Privacy & Security) and allow Local Network access when the app asks.
+  With a free Apple ID the app must be signed again every 7 days (AltStore can do it by
+  itself), and up to 3 such apps can be installed at a time.
 
 ## What it does
 
@@ -59,9 +75,13 @@ POCKETADBLOCK_IT=1 POCKETADBLOCK_BOARD=192.168.18.23 ./gradlew :shared:jvmTest -
 ```
 
 End-to-end test on an Android emulator (GitHub Actions, `.github/workflows/e2e.yml`):
-both apps are installed and `tools/e2e_android.sh` finds the fake board, logs in, saves
+the release (R8-minified) builds of both apps are installed and `tools/e2e_android.sh` finds the fake board, logs in, saves
 it and checks that Pocket Wake opens with the broker filled in. Screenshots are kept as
-an artifact. The same script runs against a phone over adb.
+an artifact. The same script runs against a phone over adb (debug APKs by default).
+
+Releases: push a tag `vX.Y.Z` and `.github/workflows/release.yml` builds the signed APK
+and the unsigned `.ipa` and publishes them with checksums. Tags with a suffix
+(`v1.0.0-beta.1`) become pre-releases.
 
 `tools/fake_board.py` is a fake board (test login `admin` / `test-password-123`) for
 trying the login, the web view and pause without a real board:
