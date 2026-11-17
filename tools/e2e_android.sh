@@ -23,11 +23,16 @@ wait_for() {
   fail "not on screen: $1"
 }
 
-# Taps the last element matching the grep pattern (waits for it first).
+# Taps the last element matching the grep pattern, retrying for up to 30 s (a dump can
+# miss an element for a moment while the screen recomposes).
 tap() {
-  wait_for "$1"
-  local b
-  b=$(dump | grep -- "$1" | tail -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]\+' | tr '\n' ' ')
+  local b=""
+  for _ in $(seq 1 30); do
+    b=$(dump | grep -- "$1" | tail -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]\+' | tr '\n' ' ' || true)
+    [ -n "$b" ] && break
+    sleep 1
+  done
+  [ -n "$b" ] || fail "not on screen: $1"
   set -- $b
   adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
 }
@@ -40,7 +45,8 @@ type_password() {
     sleep 1
     adb shell input text "$1"
     sleep 1
-    dots=$(dump | grep -o 'text="•+"' | head -1 | tr -cd '•' | wc -m)
+    dots=$(dump | grep -o 'text="•\+"' | head -1 | tr -cd '•' | wc -m || true)
+    dots=${dots:-0}
     [ "$dots" -eq "$want" ] && return 0
     echo "typed $dots of $want characters, retrying"
     adb shell input keyevent KEYCODE_MOVE_END
