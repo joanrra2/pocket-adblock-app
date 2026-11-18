@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -359,7 +360,7 @@ private fun BoardCard(
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Dot(dot)
             Text(board.name, color = Tokens.text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 170.dp))
             Tag(tag, tagColor)
             Box(Modifier.weight(1f))
             TextButton(onClick = onMenu, modifier = Modifier.testTag("menu-${board.id}")) { Text("⋯", color = Tokens.muted, fontSize = 18.sp) }
