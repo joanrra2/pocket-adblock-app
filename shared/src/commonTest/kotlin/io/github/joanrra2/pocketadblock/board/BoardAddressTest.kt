@@ -35,7 +35,7 @@ class BoardAddressTest {
     @Test
     fun homeNetworkNamesAreLocal() {
         // The names the firmware accepts in the Host header while the factory password is set.
-        for (h in listOf("sinkhole", "sinkhole.lan", "sinkhole.home", "sinkhole.home.arpa", "sinkhole.internal", "SINKHOLE.LAN."))
+        for (h in listOf("sinkhole", "sinkhole.lan", "sinkhole.home", "sinkhole.home.arpa", "sinkhole.internal", "sinkhole.localdomain", "SINKHOLE.LAN."))
             assertTrue(BoardAddress(h).isLocal, h)
         for (h in listOf("sinkhole.example.com", "192.168.1", "local.example.org", ".lan", "home.arpa.example.com"))
             assertFalse(BoardAddress.isLocalName(h), h)

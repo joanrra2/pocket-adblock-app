@@ -9,7 +9,7 @@ data class BoardAddress(val host: String, val port: Int = 80) {
      * True when the app may use plain HTTP with this address: a private IPv4 address
      * (see [Ipv4.isLocal]) or a home-network name. These are the names the firmware
      * accepts in the Host header: a single label ("sinkhole") or one ending in .local,
-     * .lan, .home, .home.arpa or .internal.
+     * .lan, .home, .home.arpa, .internal or .localdomain.
      */
     val isLocal: Boolean
         get() = Ipv4.parse(host)?.let(Ipv4::isLocal) ?: isLocalName(host)
@@ -22,7 +22,7 @@ data class BoardAddress(val host: String, val port: Int = 80) {
     override fun toString() = label
 
     companion object {
-        private val localSuffixes = listOf(".local", ".lan", ".home", ".home.arpa", ".internal")
+        private val localSuffixes = listOf(".local", ".lan", ".home", ".home.arpa", ".internal", ".localdomain")
 
         fun isLocalName(host: String): Boolean {
             val h = host.lowercase().trimEnd('.')
