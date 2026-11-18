@@ -85,7 +85,7 @@ fun LoginDialog(
             busy = false
             when (result) {
                 is BoardClient.Login.Ok -> {
-                    guard.accepted(target.address)
+                    guard.accepted(target.address, u, password)
                     onLoggedIn(LoginResult(u, password, result.status, remember, requireUnlock))
                 }
                 BoardClient.Login.WrongCredentials -> {

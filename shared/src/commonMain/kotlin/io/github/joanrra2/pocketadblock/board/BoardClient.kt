@@ -83,7 +83,9 @@ class BoardClient(engineClient: HttpClient, private val logFailures: Boolean = f
     }
 
     /** Checks a user and password with GET /api/status and returns the board's state. */
-    suspend fun login(address: BoardAddress, user: String, password: String, timeoutMs: Long = 4000): Login {
+    // From firmware 0.6 the first check after a restart or password change takes ~1 s
+    // (PBKDF2); the default timeout leaves room for it on a slow Wi-Fi.
+    suspend fun login(address: BoardAddress, user: String, password: String, timeoutMs: Long = 5000): Login {
         if (!address.isLocal) return Login.NotLocal
         return try {
             val r = http.get(address.url("/api/status")) {
@@ -104,6 +106,39 @@ class BoardClient(engineClient: HttpClient, private val logFailures: Boolean = f
             throw e
         } catch (e: Exception) {
             Login.Unreachable(e.message ?: e::class.simpleName ?: "error")
+        }
+    }
+
+    /** GET /api/restarts (firmware 0.6): the board's clock and its restarts, newest first. */
+    @kotlinx.serialization.Serializable
+    data class Restarts(val time: Long = 0, val items: List<Restart> = emptyList()) {
+        @kotlinx.serialization.Serializable
+        data class Restart(
+            /** Unix seconds; 0 when the clock wasn't set yet. */
+            val at: Long = 0,
+            /** Seconds it ran after this start (the first item: the current uptime). */
+            val ranFor: Long = 0,
+            val why: String = "",
+            /** Crash, watchdog or power dip. */
+            val unexpected: Boolean = false,
+            val version: String = "",
+        )
+    }
+
+    /** Reads the restart history, or null when the board can't be read or is older than 0.6. */
+    suspend fun restarts(address: BoardAddress, user: String, password: String): Restarts? {
+        if (!address.isLocal) return null
+        return try {
+            val r = http.get(address.url("/api/restarts")) {
+                header(HttpHeaders.Authorization, basicAuth(user, password))
+                timeout { requestTimeoutMillis = 5000; connectTimeoutMillis = 4000 }
+            }
+            if (r.status.value != 200) null
+            else settingsJson.decodeFromString(Restarts.serializer(), r.bodyAsText())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
         }
     }
 

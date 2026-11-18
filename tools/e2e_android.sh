@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # End-to-end test on a running Android emulator (or phone):
 #   fake board -> Pocket AdBlock: wrong passwords hit the login limit (429), log in, save,
-#   install the offered update and restart -> Set up Pocket Wake -> Pocket Wake opens
-#   with the board's broker filled in.
+#   crash warning and restart history, install the offered update and restart -> Set up
+#   Pocket Wake -> Pocket Wake opens with the board's broker filled in.
 # Usage: tools/e2e_android.sh <pocket-adblock.apk> <pocket-wake.apk> [out-dir]
 # Debug APKs by default; for release APKs set E2E_APP_PKG=io.github.joanrra2.pocketadblock
 # and E2E_WAKE_PKG=io.github.joanrra2.pocketwake.
@@ -93,7 +93,8 @@ type_password() {
 }
 
 step "fake board on 127.0.0.1:8080, reachable from the emulator"
-python3 -u tools/fake_board.py 8080 > "$OUT/fake_board.log" 2>&1 &
+# A 30 s first wait (the firmware starts at 5 s) so a slow emulator sees the countdown.
+FAKE_LOCK_SECONDS=30 python3 -u tools/fake_board.py 8080 > "$OUT/fake_board.log" 2>&1 &
 FAKE_PID=$!
 trap 'kill $FAKE_PID 2>/dev/null || true' EXIT
 sleep 1
@@ -112,13 +113,13 @@ wait_for 'text="127.0.0.1:8080"'
 tap 'resource-id="address-try"'
 tap 'text="Password"'
 # Enter = the password field's Go action (the keyboard would cover the Connect button).
-step "login limit: a refused password is not sent twice; 3 different ones make the board wait"
+step "login limit: a refused password is not sent twice; 5 different ones make the board wait"
 type_password "wrong-one"
 adb shell input keyevent KEYCODE_ENTER
 wait_for 'text="Wrong user or password."'
 adb shell input keyevent KEYCODE_ENTER   # same password again: the app must not send it
 sleep 2
-for pw in wrong-two wrong-three wrong-four; do
+for pw in wrong-two wrong-three wrong-four wrong-five wrong-six; do
   clear_field
   type_password "$pw"
   adb shell input keyevent KEYCODE_ENTER
@@ -129,7 +130,7 @@ shot "0-login-limit"
 wrong=$(grep -c "auth wrong" "$OUT/fake_board.log" || true)
 limited=$(grep -c "^429 " "$OUT/fake_board.log" || true)
 echo "wrong passwords sent: $wrong, refused with 429: $limited"
-[ "$wrong" -eq 3 ] || fail "expected 3 wrong passwords sent (one repeat skipped), got $wrong"
+[ "$wrong" -eq 5 ] || fail "expected 5 wrong passwords sent (one repeat skipped), got $wrong"
 [ "$limited" -eq 1 ] || fail "expected one 429, got $limited"
 wait_gone 'Too many wrong passwords'   # the fake board's first wait is 30 s; Connect comes back by itself
 clear_field
@@ -142,7 +143,16 @@ step "back to the board list"
 adb shell input keyevent KEYCODE_BACK
 wait_for 'resource-id="menu-fake-board"'
 wait_for 'text="update 0.5.2"'
+wait_for 'Restarted unexpectedly'
 shot "2-board-list"
+
+step "restart history"
+tap 'resource-id="menu-fake-board"'
+tap 'text="Restart history"'
+wait_for 'now, running for'
+wait_for 'text="firmware update"'
+shot "2a-restarts"
+tap 'text="Close"'
 
 step "install the offered update, then restart"
 tap 'resource-id="menu-fake-board"'

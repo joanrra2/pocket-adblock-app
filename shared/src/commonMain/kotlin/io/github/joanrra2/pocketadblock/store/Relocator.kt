@@ -39,7 +39,7 @@ class Relocator(
                 tried++
                 when (val login = client.login(address, m.board.user, m.password)) {
                     is BoardClient.Login.Ok -> {
-                        guard.accepted(address)
+                        guard.accepted(address, m.board.user, m.password)
                         if (login.status.hostname.equals(m.board.name, ignoreCase = true)) {
                             result[m.board.id] = address
                             break

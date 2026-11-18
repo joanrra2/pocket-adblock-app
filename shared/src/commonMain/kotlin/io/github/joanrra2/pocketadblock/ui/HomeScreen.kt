@@ -91,6 +91,7 @@ fun HomeScreen(
     var wakeFor by remember { mutableStateOf<SavedBoard?>(null) }
     var installFor by remember { mutableStateOf<Pair<SavedBoard, String>?>(null) }
     var restartFor by remember { mutableStateOf<SavedBoard?>(null) }
+    var restartsFor by remember { mutableStateOf<SavedBoard?>(null) }
     // Ticks every second while a board asks to wait, so its countdown moves.
     var tick by remember { mutableStateOf(0) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -103,11 +104,12 @@ fun HomeScreen(
         states[b.id] = when {
             password == null ->
                 if (client.probe(b.address) == BoardClient.Probe.Board) CardState.Locked else CardState.Offline
-            guard.secondsLeft(b.address) > 0 -> CardState.Throttled
             guard.wasRefused(b.address, b.user, password) ->
                 if (client.probe(b.address) == BoardClient.Probe.Board) CardState.NeedsLogin else CardState.Offline
+            // During a wait only the login this board already accepted is sent.
+            !guard.maySend(b.address, b.user, password) -> CardState.Throttled
             else -> when (val r = client.login(b.address, b.user, password)) {
-                is BoardClient.Login.Ok -> { guard.accepted(b.address); CardState.Online(r.status) }
+                is BoardClient.Login.Ok -> { guard.accepted(b.address, b.user, password); CardState.Online(r.status) }
                 BoardClient.Login.WrongCredentials -> { guard.refused(b.address, b.user, password); CardState.NeedsLogin }
                 is BoardClient.Login.TooManyAttempts -> { guard.wait(b.address, r.retryAfterSeconds); CardState.Throttled }
                 is BoardClient.Login.Refused -> CardState.Refused(r.message)
@@ -151,13 +153,12 @@ fun HomeScreen(
         scope.launch {
             if (!unlock(b)) return@launch
             val password = repo.password(b.id) ?: return@launch
-            val wait = guard.secondsLeft(b.address)
-            if (wait > 0) {
-                message = strings.tooManyAttempts.fill(wait)
-                return@launch
-            }
             if (guard.wasRefused(b.address, b.user, password)) {
                 message = strings.needsLogin
+                return@launch
+            }
+            if (!guard.maySend(b.address, b.user, password)) {
+                message = strings.tooManyAttempts.fill(guard.secondsLeft(b.address))
                 return@launch
             }
             message = when (val r = call(password)) {
@@ -243,6 +244,12 @@ fun HomeScreen(
                     TextButton(onClick = { menuFor = null; wakeFor = b }, modifier = Modifier.testTag("menu-pocketwake")) {
                         Text(strings.pwMenu, modifier = Modifier.fillMaxWidth())
                     }
+                    // Firmware 0.6 and later report why they last started.
+                    if (st != null && st.lastRestart.isNotEmpty()) {
+                        TextButton(onClick = { menuFor = null; restartsFor = b }, modifier = Modifier.testTag("menu-restarts")) {
+                            Text(strings.menuRestarts, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
                     if (st != null) {
                         TextButton(onClick = { menuFor = null; restartFor = b }, modifier = Modifier.testTag("menu-restart")) {
                             Text(strings.menuRestart, modifier = Modifier.fillMaxWidth())
@@ -295,6 +302,18 @@ fun HomeScreen(
                 }, modifier = Modifier.testTag("restart-confirm")) { Text(strings.menuRestart) }
             },
             dismissButton = { TextButton(onClick = { restartFor = null }) { Text(strings.cancel) } },
+        )
+    }
+    restartsFor?.let { b ->
+        RestartsDialog(
+            title = "${b.name} · ${strings.menuRestarts}",
+            strings = strings,
+            load = {
+                val password = repo.password(b.id)
+                if (password != null && guard.maySend(b.address, b.user, password)) client.restarts(b.address, b.user, password)
+                else null
+            },
+            onDismiss = { restartsFor = null },
         )
     }
     forgetFor?.let { b ->
@@ -391,6 +410,10 @@ private fun BoardCard(
                 strings.listUpdateFailed.fill(st.update.message.ifEmpty { "?" }).takeIf { st.update.failed },
                 strings.weakSignal.fill(st.wifi.rssi).takeIf { st.wifi.weakSignal },
             )
+            // A crash, watchdog or power dip in the last day is worth a red line.
+            if (st.unexpectedRestart && st.uptime in 0 until 86_400) {
+                Text(strings.restartWarning.fill(formatDuration(st.uptime), st.lastRestart), color = Tokens.bad, fontSize = 12.sp)
+            }
             warnings.forEach { Text(it, color = Tokens.warn, fontSize = 12.sp) }
         }
         if (state == CardState.NeedsLogin) Text(strings.needsLogin, color = Tokens.warn, fontSize = 12.sp)

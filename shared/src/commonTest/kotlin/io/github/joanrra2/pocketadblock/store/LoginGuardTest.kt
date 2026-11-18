@@ -36,11 +36,21 @@ class LoginGuardTest {
     }
 
     @Test
-    fun aGoodLoginClearsTheBoard() {
+    fun aGoodLoginClearsWhatTheBoardRefused() {
         guard.refused(board, "admin", "old")
-        guard.wait(board, 30)
-        guard.accepted(board)
+        guard.accepted(board, "admin", "good")
         assertTrue(guard.maySend(board, "admin", "old"))
-        assertEquals(0, guard.secondsLeft(board))
+    }
+
+    @Test
+    fun duringAWaitOnlyTheAcceptedLoginIsSent() {
+        // The firmware keeps taking the right password while it makes others wait.
+        guard.accepted(board, "admin", "good")
+        guard.wait(board, 30)
+        assertTrue(guard.maySend(board, "admin", "good"))
+        assertFalse(guard.maySend(board, "admin", "guess"))
+        guard.wait(other, 30)
+        assertFalse(guard.maySend(other, "admin", "good"), "accepted on one board only")
+        assertEquals(30, guard.secondsLeft(board))
     }
 }

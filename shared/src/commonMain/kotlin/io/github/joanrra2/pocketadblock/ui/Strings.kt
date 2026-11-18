@@ -99,6 +99,17 @@ class Strings(
     val factoryPassword: String,
     val listUpdateFailed: String,
     val weakSignal: String,
+    // Restarts (firmware 0.6)
+    val menuRestarts: String,
+    val restartsUnavailable: String,
+    val clockSet: String,
+    val clockNotSet: String,
+    val close: String,
+    val runningFor: String,
+    val ago: String,
+    val timeUnknown: String,
+    val ranFor: String,
+    val restartWarning: String,
 ) {
     companion object {
         fun forLanguage(code: String): Strings = if (code.lowercase().startsWith("es")) ES else EN
@@ -193,6 +204,16 @@ class Strings(
             factoryPassword = "Factory password: change it in Settings → Admin login.",
             listUpdateFailed = "Blocklist update failed: {0}",
             weakSignal = "Weak Wi-Fi signal ({0} dBm)",
+            menuRestarts = "Restart history",
+            restartsUnavailable = "Couldn't read the restart history (it needs firmware 0.6 or later).",
+            clockSet = "The board's clock is set (from the internet).",
+            clockNotSet = "The board's clock isn't set yet: it hasn't reached a time server.",
+            close = "Close",
+            runningFor = "now, running for {0}",
+            ago = "{0} ago",
+            timeUnknown = "time unknown",
+            ranFor = "ran {0}",
+            restartWarning = "Restarted unexpectedly {0} ago: {1}",
         )
 
         val ES = Strings(
@@ -285,6 +306,16 @@ class Strings(
             factoryPassword = "Contraseña de fábrica: cámbiala en Ajustes → Usuario administrador.",
             listUpdateFailed = "Falló la actualización de la lista: {0}",
             weakSignal = "Señal Wi-Fi débil ({0} dBm)",
+            menuRestarts = "Historial de reinicios",
+            restartsUnavailable = "No se ha podido leer el historial de reinicios (necesita el firmware 0.6 o posterior).",
+            clockSet = "El reloj de la placa está en hora (desde internet).",
+            clockNotSet = "El reloj de la placa aún no está en hora: no ha llegado a un servidor de hora.",
+            close = "Cerrar",
+            runningFor = "ahora, en marcha desde hace {0}",
+            ago = "hace {0}",
+            timeUnknown = "hora desconocida",
+            ranFor = "funcionó {0}",
+            restartWarning = "Reinicio inesperado hace {0}: {1}",
         )
     }
 }

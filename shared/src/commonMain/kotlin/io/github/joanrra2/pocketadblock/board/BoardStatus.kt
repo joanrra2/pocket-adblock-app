@@ -17,7 +17,14 @@ data class BoardStatus(
     val firmware: Firmware = Firmware(),
     /** The blocklist's automatic download. */
     val update: ListUpdate = ListUpdate(),
+    /** The board's clock, unix seconds; 0 until NTP set it or before firmware 0.6. */
+    val time: Long = 0,
+    /** Why the board last started ("power on", "crash", ...); empty before firmware 0.6. */
+    val lastRestart: String = "",
 ) {
+    /** The last restart was a crash, a watchdog or a power dip (not something a person did). */
+    val unexpectedRestart: Boolean get() = isUnexpected(lastRestart)
+
     @Serializable
     data class Firmware(
         val latest: String = "",
@@ -71,5 +78,14 @@ data class BoardStatus(
         private val json = Json { ignoreUnknownKeys = true }
 
         fun parse(text: String): BoardStatus = json.decodeFromString(serializer(), text)
+
+        /**
+         * The firmware's unexpected restart reasons (crash, watchdog, brownout). GET
+         * /api/restarts says it per item; /api/status only has the text.
+         */
+        fun isUnexpected(reason: String): Boolean {
+            val r = reason.lowercase()
+            return "crash" in r || "watchdog" in r || "brownout" in r
+        }
     }
 }

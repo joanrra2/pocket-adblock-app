@@ -7,9 +7,11 @@ like the real web UI, so it shows whether the app's web view logs in by itself.
 
 Test-only credentials (never a real board's): admin / test-password-123
 
-Like the coming firmware login limit, 3 different wrong passwords in a row make it
-answer 429 with Retry-After (30 s, then doubling); the same wrong password repeated
-does not count. It also offers an update (0.5.2) to try the app's install and restart.
+Like firmware 0.6, 5 different wrong passwords in a row make it answer 429 with
+Retry-After (5 s, then doubling up to 600 s; FAKE_LOCK_SECONDS sets the first wait);
+the same wrong password repeated does not count, and the right password keeps working
+during the wait. It reports a crash as its last restart, keeps a restart history
+(/api/restarts) and offers an update (0.5.2) to try the app's install and restart.
 
     python tools/fake_board.py [port]          # default 8080
     adb reverse tcp:8080 tcp:8080              # phone over USB, then type 127.0.0.1:8080
@@ -17,6 +19,7 @@ does not count. It also offers an update (0.5.2) to try the app's install and re
 import base64
 import json
 import math
+import os
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -46,12 +49,19 @@ STATUS = {"version": "0.4.2", "edition": "pro", "hostname": "fake-board", "uptim
           "blocklist": {"count": 140212},
           "update": {"running": False, "lastOk": True, "lastAgo": 3600, "message": "list updated"},
           "firmware": {"latest": "0.5.2", "available": True, "installing": False, "auto": False,
-                       "message": "update available"}}
+                       "message": "update available"},
+          "time": int(time.time()), "lastRestart": "crash"}
+
+# GET /api/restarts (firmware 0.6), newest first; the first item is the current boot.
+RESTARTS = [{"at": int(time.time()) - 1, "ranFor": 1, "why": "crash", "unexpected": True, "version": "0.4.2"},
+            {"at": int(time.time()) - 2 * 86400, "ranFor": 2 * 86400 - 1, "why": "firmware update",
+             "unexpected": False, "version": "0.4.2"}]
 
 # Login limit state: the different wrong passwords seen, and when logins open again.
 WRONG = set()
 LOCKED_UNTIL = 0.0
-LOCK_SECONDS = 30
+LOCK_SECONDS = int(os.environ.get("FAKE_LOCK_SECONDS", "5"))
+WRONG_LIMIT = 5
 
 
 # GET /api/settings (only the MQTT part matters to the app). A made-up test broker.
@@ -65,19 +75,19 @@ class Handler(BaseHTTPRequestHandler):
         global LOCKED_UNTIL, LOCK_SECONDS
         got = self.headers.get("Authorization")
         now = time.monotonic()
+        if got == EXPECTED:  # the right password works even during a wait
+            WRONG.clear()
+            return True
         if got is not None and now < LOCKED_UNTIL:
             wait = max(1, math.ceil(LOCKED_UNTIL - now))
             print(f"429 {self.path} (wait {wait} s)")
-            self.send(429, b'{"ok":false,"message":"too many attempts"}', "application/json",
+            self.send(429, b'{"ok":false,"message":"too many wrong passwords: wait and try again"}', "application/json",
                       {"Retry-After": str(wait)})
             return False
-        if got == EXPECTED:
-            WRONG.clear()
-            return True
         if got is not None:
             WRONG.add(got)
-            if len(WRONG) >= 3:
-                LOCKED_UNTIL, LOCK_SECONDS = now + LOCK_SECONDS, LOCK_SECONDS * 2
+            if len(WRONG) >= WRONG_LIMIT:
+                LOCKED_UNTIL, LOCK_SECONDS = now + LOCK_SECONDS, min(LOCK_SECONDS * 2, 600)
                 WRONG.clear()
         print(f"401 {self.path} (auth {'missing' if got is None else 'wrong'})")
         self.send(401, b"authentication required", "text/plain",
@@ -93,6 +103,11 @@ class Handler(BaseHTTPRequestHandler):
             print(f"200 {self.path}")
             if self.path == "/api/settings":
                 return self.send(200, json.dumps(SETTINGS).encode(), "application/json")
+            if self.path == "/api/restarts":
+                RESTARTS[0]["ranFor"] = STATUS["uptime"]
+                body = {"time": int(time.time()), "items": RESTARTS}
+                return self.send(200, json.dumps(body).encode(), "application/json")
+            STATUS["time"] = int(time.time())
             return self.send(200, json.dumps(STATUS).encode(), "application/json")
         self.send(404, b"not found", "text/plain")
 
@@ -116,9 +131,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, b'{"ok":true,"message":"installing; the device restarts when done"}', "application/json")
         if self.path == "/api/reboot":
             # A pretend restart: the update (if any) is now installed.
+            why = "firmware update" if fw["installing"] else "restarted from the web UI"
             if fw["installing"]:
                 STATUS["version"], fw["installing"], fw["available"] = fw["latest"], False, False
-            STATUS["uptime"] = 1
+            STATUS["uptime"], STATUS["lastRestart"] = 1, why
+            RESTARTS.insert(0, {"at": int(time.time()), "ranFor": 1, "why": why, "unexpected": False,
+                                "version": STATUS["version"]})
             print("200 POST /api/reboot")
             return self.send(200, b'{"ok":true,"message":"rebooting"}', "application/json")
         # POST /api/blocking mode=on|off|pause&minutes=N, like web_server.cpp postBlocking().

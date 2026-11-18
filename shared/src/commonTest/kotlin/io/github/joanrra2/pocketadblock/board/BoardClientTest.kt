@@ -136,4 +136,24 @@ class BoardClientTest {
         // The firmware base64-encodes "user:pass" (web_server.cpp, authorized()).
         assertEquals("Basic YWRtaW46c2lua2hvbGU=", BoardClient.basicAuth("admin", "sinkhole"))
     }
+
+    @Test
+    fun readsTheRestartHistory() = runTest {
+        val c = BoardClient(HttpClient(MockEngine { req ->
+            if (req.url.encodedPath != "/api/restarts") respond("", HttpStatusCode.NotFound)
+            else respond(
+                """{"time":1795040000,"items":[{"at":1795039700,"ranFor":300,"why":"crash","unexpected":true,"version":"0.6.0"},
+                   {"at":0,"ranFor":86400,"why":"power on","unexpected":false,"version":"0.6.0"}]}""",
+                HttpStatusCode.OK,
+            )
+        }))
+        val r = c.restarts(board, TEST_USER, TEST_PASSWORD)!!
+        assertEquals(1795040000, r.time)
+        assertEquals(2, r.items.size)
+        assertTrue(r.items[0].unexpected)
+        assertEquals("power on", r.items[1].why)
+        // Boards before 0.6 have no such page.
+        assertEquals(null, BoardClient(HttpClient(MockEngine { respond("not found", HttpStatusCode.NotFound) }))
+            .restarts(board, TEST_USER, TEST_PASSWORD))
+    }
 }

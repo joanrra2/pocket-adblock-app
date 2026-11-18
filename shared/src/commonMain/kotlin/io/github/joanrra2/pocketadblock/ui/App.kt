@@ -62,19 +62,18 @@ fun App(platform: Platform, modifier: Modifier = Modifier) {
         scope.launch {
             if (!unlock(board)) return@launch
             val password = repo.password(board.id)
-            val wait = guard.secondsLeft(board.address)
-            if (wait > 0) {
-                notice = strings.tooManyAttempts.fill(wait)
-                return@launch
-            }
             if (password == null || guard.wasRefused(board.address, board.user, password)) {
                 if (password != null) notice = strings.loginAgain
                 loginFor = LoginTarget(board.address, setup = false, saved = board)
                 return@launch
             }
+            if (!guard.maySend(board.address, board.user, password)) {
+                notice = strings.tooManyAttempts.fill(guard.secondsLeft(board.address))
+                return@launch
+            }
             when (val r = client.login(board.address, board.user, password)) {
                 is BoardClient.Login.Ok -> {
-                    guard.accepted(board.address)
+                    guard.accepted(board.address, board.user, password)
                     session = Session(board.address, board.user, password, r.status)
                 }
                 BoardClient.Login.WrongCredentials -> {
