@@ -14,6 +14,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.joanrra2.pocketadblock.board.BoardClient
 import io.github.joanrra2.pocketadblock.board.BoardStatus
+import io.github.joanrra2.pocketadblock.store.LoginGuard
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 data class LoginResult(
@@ -44,6 +47,7 @@ fun LoginDialog(
     target: LoginTarget,
     strings: Strings,
     client: BoardClient,
+    guard: LoginGuard,
     canAuthenticate: Boolean,
     onDismiss: () -> Unit,
     onLoggedIn: (LoginResult) -> Unit,
@@ -55,18 +59,44 @@ fun LoginDialog(
     var requireUnlock by remember { mutableStateOf(target.saved?.requireUnlock ?: false) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    // Seconds the board asked to wait (429); Connect stays off until then.
+    var waitLeft by remember { mutableStateOf(guard.secondsLeft(target.address)) }
     val scope = rememberCoroutineScope()
 
+    LaunchedEffect(waitLeft > 0) {
+        while (waitLeft > 0) {
+            delay(1000)
+            waitLeft = guard.secondsLeft(target.address)
+        }
+    }
+
     fun submit() {
-        if (busy || user.isBlank() || password.isEmpty()) return
+        if (busy || waitLeft > 0 || user.isBlank() || password.isEmpty()) return
+        val u = user.trim()
+        // The same wrong password is never sent twice: the board already said no.
+        if (guard.wasRefused(target.address, u, password)) {
+            error = strings.wrongCredentials
+            return
+        }
         busy = true
         error = null
         scope.launch {
-            val result = client.login(target.address, user.trim(), password)
+            val result = client.login(target.address, u, password)
             busy = false
             when (result) {
-                is BoardClient.Login.Ok -> onLoggedIn(LoginResult(user.trim(), password, result.status, remember, requireUnlock))
-                BoardClient.Login.WrongCredentials -> error = strings.wrongCredentials
+                is BoardClient.Login.Ok -> {
+                    guard.accepted(target.address)
+                    onLoggedIn(LoginResult(u, password, result.status, remember, requireUnlock))
+                }
+                BoardClient.Login.WrongCredentials -> {
+                    guard.refused(target.address, u, password)
+                    error = strings.wrongCredentials
+                }
+                is BoardClient.Login.TooManyAttempts -> {
+                    guard.wait(target.address, result.retryAfterSeconds)
+                    waitLeft = guard.secondsLeft(target.address)
+                }
+                is BoardClient.Login.Refused -> error = strings.refused.fill(result.message)
                 BoardClient.Login.NotBoard -> error = strings.notABoard
                 BoardClient.Login.NotLocal -> error = strings.notLocal
                 is BoardClient.Login.Unreachable -> error = strings.unreachable.fill(result.reason)
@@ -104,11 +134,12 @@ fun LoginDialog(
                     if (remember) Text(strings.rememberNote, color = Tokens.muted, fontSize = 12.sp)
                 }
                 if (busy) Text(strings.checking, color = Tokens.muted, fontSize = 13.sp)
-                error?.let { Text(it, color = Tokens.bad, fontSize = 13.sp, modifier = Modifier.testTag("login-error")) }
+                val shown = if (waitLeft > 0) strings.tooManyAttempts.fill(waitLeft) else error
+                shown?.let { Text(it, color = Tokens.bad, fontSize = 13.sp, modifier = Modifier.testTag("login-error")) }
             }
         },
         confirmButton = {
-            Button(onClick = { submit() }, enabled = !busy, modifier = Modifier.testTag("login-connect")) {
+            Button(onClick = { submit() }, enabled = !busy && waitLeft == 0, modifier = Modifier.testTag("login-connect")) {
                 Text(strings.connect)
             }
         },

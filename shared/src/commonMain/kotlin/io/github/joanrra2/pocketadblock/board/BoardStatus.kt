@@ -15,12 +15,41 @@ data class BoardStatus(
     val dns: Dns = Dns(),
     val blocklist: Blocklist = Blocklist(),
     val firmware: Firmware = Firmware(),
+    /** The blocklist's automatic download. */
+    val update: ListUpdate = ListUpdate(),
 ) {
     @Serializable
-    data class Firmware(val latest: String = "", val available: Boolean = false)
+    data class Firmware(
+        val latest: String = "",
+        val available: Boolean = false,
+        /** Downloading or writing an update right now; the board restarts when done. */
+        val installing: Boolean = false,
+        /** Installs updates by itself (signed builds only). */
+        val auto: Boolean = false,
+        val message: String = "",
+    )
 
     @Serializable
-    data class Wifi(val ssid: String = "", val ip: String = "")
+    data class Wifi(
+        val ssid: String = "",
+        val ip: String = "",
+        /** Signal in dBm; 0 when unknown. */
+        val rssi: Int = 0,
+    ) {
+        val weakSignal: Boolean get() = rssi in -127..-76
+    }
+
+    @Serializable
+    data class ListUpdate(
+        val running: Boolean = false,
+        val lastOk: Boolean = true,
+        /** Seconds since the last try; -1 when it never ran. */
+        val lastAgo: Long = -1,
+        val message: String = "",
+    ) {
+        /** The last automatic download failed (and none is running now). */
+        val failed: Boolean get() = !running && !lastOk && lastAgo >= 0
+    }
 
     @Serializable
     data class Dns(

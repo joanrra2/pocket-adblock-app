@@ -1,0 +1,46 @@
+package io.github.joanrra2.pocketadblock.store
+
+import io.github.joanrra2.pocketadblock.board.BoardAddress
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+class LoginGuardTest {
+    private var now = 0L
+    private val guard = LoginGuard { now }
+    private val board = BoardAddress("192.168.18.23")
+    private val other = BoardAddress("192.168.18.24")
+
+    @Test
+    fun aRefusedPasswordIsNeverSentAgain() {
+        assertTrue(guard.maySend(board, "admin", "old"))
+        guard.refused(board, "admin", "old")
+        assertFalse(guard.maySend(board, "admin", "old"))
+        now += 3_600_000
+        assertFalse(guard.maySend(board, "admin", "old"), "time alone must not lift it")
+        assertTrue(guard.maySend(board, "admin", "new"), "a newly typed password may be tried")
+        assertTrue(guard.maySend(other, "admin", "old"), "other boards are separate")
+    }
+
+    @Test
+    fun waitsAsLongAsTheBoardAsks() {
+        guard.wait(board, 30)
+        assertEquals(30, guard.secondsLeft(board))
+        assertFalse(guard.maySend(board, "admin", "any"))
+        now += 29_500
+        assertEquals(1, guard.secondsLeft(board))
+        now += 500
+        assertEquals(0, guard.secondsLeft(board))
+        assertTrue(guard.maySend(board, "admin", "any"))
+    }
+
+    @Test
+    fun aGoodLoginClearsTheBoard() {
+        guard.refused(board, "admin", "old")
+        guard.wait(board, 30)
+        guard.accepted(board)
+        assertTrue(guard.maySend(board, "admin", "old"))
+        assertEquals(0, guard.secondsLeft(board))
+    }
+}

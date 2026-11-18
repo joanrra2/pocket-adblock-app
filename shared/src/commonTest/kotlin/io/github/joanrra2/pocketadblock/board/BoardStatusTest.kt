@@ -20,5 +20,22 @@ class BoardStatusTest {
         val s = BoardStatus.parse("""{"version":"0.3.0"}""")
         assertEquals("0.3.0", s.version)
         assertEquals(0.0, s.blockedPercent)
+        kotlin.test.assertFalse(s.update.failed)
+        kotlin.test.assertFalse(s.wifi.weakSignal)
+    }
+
+    @Test
+    fun firmware052Fields() {
+        // Shapes from firmware 0.5.2 GET /api/status (web_server.cpp getStatus).
+        val s = BoardStatus.parse(
+            """{"wifi":{"rssi":-81},"update":{"running":false,"lastOk":false,"lastAgo":120,"message":"HTTP 404"},
+               "firmware":{"latest":"0.5.3","available":true,"installing":true,"auto":true}}""",
+        )
+        kotlin.test.assertTrue(s.wifi.weakSignal)
+        kotlin.test.assertTrue(s.update.failed)
+        assertEquals("HTTP 404", s.update.message)
+        kotlin.test.assertTrue(s.firmware.installing)
+        kotlin.test.assertTrue(s.firmware.auto)
+        kotlin.test.assertFalse(BoardStatus.parse("""{"update":{"running":true,"lastOk":false,"lastAgo":5}}""").update.failed)
     }
 }

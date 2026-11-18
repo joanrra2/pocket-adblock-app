@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # End-to-end test on a running Android emulator (or phone):
-#   fake board -> Pocket AdBlock (find, log in, save) -> Set up Pocket Wake -> Pocket Wake
-#   opens with the board's broker filled in.
+#   fake board -> Pocket AdBlock: wrong passwords hit the login limit (429), log in, save,
+#   install the offered update and restart -> Set up Pocket Wake -> Pocket Wake opens
+#   with the board's broker filled in.
 # Usage: tools/e2e_android.sh <pocket-adblock.apk> <pocket-wake.apk> [out-dir]
 # Debug APKs by default; for release APKs set E2E_APP_PKG=io.github.joanrra2.pocketadblock
 # and E2E_WAKE_PKG=io.github.joanrra2.pocketwake.
@@ -59,6 +60,12 @@ tap() {
   adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
 }
 
+# Empties the focused text field.
+clear_field() {
+  adb shell input keyevent KEYCODE_MOVE_END
+  for _ in $(seq 1 30); do adb shell input keyevent KEYCODE_DEL; done
+}
+
 # Types into the focused password field and checks the number of dots: emulator input
 # sometimes drops or repeats a character. Clears and retries up to 3 times.
 type_password() {
@@ -71,8 +78,7 @@ type_password() {
     dots=${dots:-0}
     [ "$dots" -eq "$want" ] && return 0
     echo "typed $dots of $want characters, retrying"
-    adb shell input keyevent KEYCODE_MOVE_END
-    for _ in $(seq 1 30); do adb shell input keyevent KEYCODE_DEL; done
+    clear_field
   done
   fail "could not type the password"
 }
@@ -96,8 +102,29 @@ adb shell input text "127.0.0.1:8080"
 wait_for 'text="127.0.0.1:8080"'
 tap 'resource-id="address-try"'
 tap 'text="Password"'
-type_password "test-password-123"
 # Enter = the password field's Go action (the keyboard would cover the Connect button).
+step "login limit: a refused password is not sent twice; 3 different ones make the board wait"
+type_password "wrong-one"
+adb shell input keyevent KEYCODE_ENTER
+wait_for 'text="Wrong user or password."'
+adb shell input keyevent KEYCODE_ENTER   # same password again: the app must not send it
+sleep 2
+for pw in wrong-two wrong-three wrong-four; do
+  clear_field
+  type_password "$pw"
+  adb shell input keyevent KEYCODE_ENTER
+  sleep 2
+done
+wait_for 'Too many wrong passwords'
+shot "0-login-limit"
+wrong=$(grep -c "auth wrong" "$OUT/fake_board.log" || true)
+limited=$(grep -c "^429 " "$OUT/fake_board.log" || true)
+echo "wrong passwords sent: $wrong, refused with 429: $limited"
+[ "$wrong" -eq 3 ] || fail "expected 3 wrong passwords sent (one repeat skipped), got $wrong"
+[ "$limited" -eq 1 ] || fail "expected one 429, got $limited"
+sleep 12   # the fake board's first wait is 10 s; Connect comes back by itself
+clear_field
+type_password "test-password-123"
 adb shell input keyevent KEYCODE_ENTER
 wait_for 'text="fake-board"'
 shot "1-board-page"
@@ -105,7 +132,22 @@ shot "1-board-page"
 step "back to the board list"
 adb shell input keyevent KEYCODE_BACK
 wait_for 'resource-id="menu-fake-board"'
+wait_for 'text="update 0.5.2"'
 shot "2-board-list"
+
+step "install the offered update, then restart"
+tap 'resource-id="menu-fake-board"'
+tap 'text="Install update 0.5.2"'
+tap 'resource-id="install-confirm"'
+wait_for 'is installing the update'
+wait_for 'text="installing update"'
+grep -q "200 POST /api/firmware/install" "$OUT/fake_board.log" || fail "install was not sent"
+tap 'resource-id="menu-fake-board"'
+tap 'resource-id="menu-restart"'
+tap 'resource-id="restart-confirm"'
+wait_for 'is restarting'
+wait_for 'v0.5.2'
+shot "2b-updated"
 
 step "Set up Pocket Wake"
 tap 'resource-id="menu-fake-board"'

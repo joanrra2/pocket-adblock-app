@@ -62,7 +62,7 @@ class BoardClientTest {
                 "auth=${req.headers[io.ktor.http.HttpHeaders.Authorization] != null} $body"
             respond("""{"ok":true,"message":"ok"}""", HttpStatusCode.OK)
         }))
-        assertEquals(null, c.setBlocking(board, TEST_USER, TEST_PASSWORD, BoardClient.Blocking.Pause(30)))
+        assertEquals(BoardClient.Result.Ok("ok"), c.setBlocking(board, TEST_USER, TEST_PASSWORD, BoardClient.Blocking.Pause(30)))
         assertEquals("POST /api/blocking csrf=sinkhole auth=true mode=pause&minutes=30", seen)
         c.setBlocking(board, TEST_USER, TEST_PASSWORD, BoardClient.Blocking.On)
         assertTrue(seen!!.endsWith("mode=on"))
@@ -75,8 +75,51 @@ class BoardClientTest {
         val c = BoardClient(HttpClient(MockEngine {
             respond("""{"ok":false,"message":"missing X-Requested-With header"}""", HttpStatusCode.Forbidden)
         }))
-        val err = c.setBlocking(board, TEST_USER, TEST_PASSWORD, BoardClient.Blocking.On)
-        assertTrue(err!!.startsWith("HTTP 403"), err)
+        val r = c.setBlocking(board, TEST_USER, TEST_PASSWORD, BoardClient.Blocking.On)
+        assertEquals(BoardClient.Result.Failed("missing X-Requested-With header"), r)
+    }
+
+    @Test
+    fun tooManyAttemptsCarriesRetryAfter() = runTest {
+        val c = BoardClient(HttpClient(MockEngine {
+            respond("too many attempts", HttpStatusCode.TooManyRequests, io.ktor.http.headersOf(io.ktor.http.HttpHeaders.RetryAfter, "45"))
+        }))
+        assertEquals(BoardClient.Login.TooManyAttempts(45), c.login(board, TEST_USER, "nope"))
+        assertEquals(BoardClient.Result.TooManyAttempts(45), c.reboot(board, TEST_USER, TEST_PASSWORD))
+    }
+
+    @Test
+    fun retryAfterHeader() {
+        assertEquals(30, BoardClient.retryAfterSeconds("30"))
+        assertEquals(60, BoardClient.retryAfterSeconds(null))
+        assertEquals(60, BoardClient.retryAfterSeconds("Wed, 21 Oct 2026 07:28:00 GMT"))
+        assertEquals(1, BoardClient.retryAfterSeconds("0"))
+    }
+
+    @Test
+    fun loginShowsTheBoardsRefusal() = runTest {
+        val c = BoardClient(HttpClient(MockEngine {
+            respond("""{"ok":false,"message":"use the board's IP address"}""", HttpStatusCode.Forbidden)
+        }))
+        assertEquals(BoardClient.Login.Refused("use the board's IP address"), c.login(board, TEST_USER, TEST_PASSWORD))
+    }
+
+    @Test
+    fun firmwareActionsUseTheirEndpoints() = runTest {
+        val seen = mutableListOf<String>()
+        val c = BoardClient(HttpClient(MockEngine { req ->
+            seen += "${req.method.value} ${req.url.encodedPath} csrf=${req.headers["X-Requested-With"]}"
+            if (req.url.encodedPath == "/api/firmware/install")
+                respond("""{"ok":false,"message":"no update available; check first"}""", HttpStatusCode.Conflict)
+            else respond("""{"ok":true,"message":"rebooting"}""", HttpStatusCode.OK)
+        }))
+        assertEquals(BoardClient.Result.Ok("rebooting"), c.reboot(board, TEST_USER, TEST_PASSWORD))
+        assertEquals(BoardClient.Result.Failed("no update available; check first"), c.installFirmware(board, TEST_USER, TEST_PASSWORD))
+        c.checkFirmware(board, TEST_USER, TEST_PASSWORD)
+        assertEquals(
+            listOf("POST /api/reboot csrf=sinkhole", "POST /api/firmware/install csrf=sinkhole", "POST /api/firmware/check csrf=sinkhole"),
+            seen,
+        )
     }
 
     @Test
