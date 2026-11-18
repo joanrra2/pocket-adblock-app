@@ -51,7 +51,8 @@ actual fun BoardWebView(
             settings.domStorageEnabled = true
             settings.setSupportMultipleWindows(false)
             webViewClient = object : WebViewClient() {
-                // A wrong password makes every request ask again; stop after a few.
+                // The login was checked just before opening the page, so a challenge after a few
+                // means the board refused it: stop, never loop on a wrong password.
                 private var challenges = 0
 
                 override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
@@ -93,4 +94,4 @@ actual fun BoardWebView(
     AndroidView(factory = { webView }, modifier = modifier)
 }
 
-private const val MAX_CHALLENGES = 12
+private const val MAX_CHALLENGES = 3

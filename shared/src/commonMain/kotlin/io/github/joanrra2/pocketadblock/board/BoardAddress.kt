@@ -2,13 +2,17 @@ package io.github.joanrra2.pocketadblock.board
 
 import io.github.joanrra2.pocketadblock.net.Ipv4
 
-/** Where a board answers: an IPv4 address or a .local name, and the HTTP port. */
+/** Where a board answers: an IPv4 address or a home-network name, and the HTTP port. */
 data class BoardAddress(val host: String, val port: Int = 80) {
 
-    /** True when the app may use plain HTTP with this address (see [Ipv4.isLocal]). */
+    /**
+     * True when the app may use plain HTTP with this address: a private IPv4 address
+     * (see [Ipv4.isLocal]) or a home-network name. These are the names the firmware
+     * accepts in the Host header: a single label ("sinkhole") or one ending in .local,
+     * .lan, .home, .home.arpa, .internal or .localdomain.
+     */
     val isLocal: Boolean
-        get() = Ipv4.parse(host)?.let(Ipv4::isLocal)
-            ?: (host.endsWith(".local", ignoreCase = true) || host.equals("localhost", ignoreCase = true))
+        get() = Ipv4.parse(host)?.let(Ipv4::isLocal) ?: isLocalName(host)
 
     fun url(path: String = "/"): String = "http://$label$path"
 
@@ -18,8 +22,16 @@ data class BoardAddress(val host: String, val port: Int = 80) {
     override fun toString() = label
 
     companion object {
+        private val localSuffixes = listOf(".local", ".lan", ".home", ".home.arpa", ".internal", ".localdomain")
+
+        fun isLocalName(host: String): Boolean {
+            val h = host.lowercase().trimEnd('.')
+            if (h.isEmpty() || h.all { it.isDigit() || it == '.' }) return false
+            return '.' !in h || localSuffixes.any { h.endsWith(it) && h.length > it.length }
+        }
+
         /**
-         * Reads what someone typed: "192.168.1.50", "sinkhole.local",
+         * Reads what someone typed: "192.168.1.50", "sinkhole.local", "sinkhole.lan",
          * "http://192.168.1.50:8080/" and so on. Returns null when it isn't an address.
          */
         fun parse(input: String): BoardAddress? {

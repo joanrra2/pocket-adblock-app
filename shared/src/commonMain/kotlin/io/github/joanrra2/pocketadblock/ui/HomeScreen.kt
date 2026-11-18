@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -43,6 +44,7 @@ import io.github.joanrra2.pocketadblock.board.BoardClient
 import io.github.joanrra2.pocketadblock.board.BoardStatus
 import io.github.joanrra2.pocketadblock.discovery.Discovery
 import io.github.joanrra2.pocketadblock.store.BoardRepository
+import io.github.joanrra2.pocketadblock.store.LoginGuard
 import io.github.joanrra2.pocketadblock.store.Relocator
 import io.github.joanrra2.pocketadblock.store.SavedBoard
 import kotlinx.coroutines.coroutineScope
@@ -57,6 +59,10 @@ sealed interface CardState {
     /** Answers, but there is no saved password to read its state. */
     data object Locked : CardState
     data object NeedsLogin : CardState
+    /** The board asked to wait after too many wrong passwords (429); nothing is sent. */
+    data object Throttled : CardState
+    /** The board refused the request with its own message. */
+    data class Refused(val message: String) : CardState
     data object Locating : CardState
     data object Offline : CardState
 }
@@ -69,6 +75,7 @@ fun HomeScreen(
     client: BoardClient,
     discovery: Discovery,
     repo: BoardRepository,
+    guard: LoginGuard,
     notice: String?,
     unlock: suspend (SavedBoard) -> Boolean,
     onOpen: (SavedBoard) -> Unit,
@@ -82,17 +89,30 @@ fun HomeScreen(
     var forgetFor by remember { mutableStateOf<SavedBoard?>(null) }
     var menuFor by remember { mutableStateOf<SavedBoard?>(null) }
     var wakeFor by remember { mutableStateOf<SavedBoard?>(null) }
+    var installFor by remember { mutableStateOf<Pair<SavedBoard, String>?>(null) }
+    var restartFor by remember { mutableStateOf<SavedBoard?>(null) }
+    var restartsFor by remember { mutableStateOf<SavedBoard?>(null) }
+    // Ticks every second while a board asks to wait, so its countdown moves.
+    var tick by remember { mutableStateOf(0) }
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
+    // The saved password goes to a board only while the guard allows it: never again
+    // once the board refused it (until someone logs in again), never while it asks to wait.
     suspend fun refresh(b: SavedBoard) {
         val password = repo.password(b.id)
-        states[b.id] = if (password == null) {
-            if (client.probe(b.address) == BoardClient.Probe.Board) CardState.Locked else CardState.Offline
-        } else {
-            when (val r = client.login(b.address, b.user, password)) {
-                is BoardClient.Login.Ok -> CardState.Online(r.status)
-                BoardClient.Login.WrongCredentials -> CardState.NeedsLogin
+        states[b.id] = when {
+            password == null ->
+                if (client.probe(b.address) == BoardClient.Probe.Board) CardState.Locked else CardState.Offline
+            guard.wasRefused(b.address, b.user, password) ->
+                if (client.probe(b.address) == BoardClient.Probe.Board) CardState.NeedsLogin else CardState.Offline
+            // During a wait only the login this board already accepted is sent.
+            !guard.maySend(b.address, b.user, password) -> CardState.Throttled
+            else -> when (val r = client.login(b.address, b.user, password)) {
+                is BoardClient.Login.Ok -> { guard.accepted(b.address, b.user, password); CardState.Online(r.status) }
+                BoardClient.Login.WrongCredentials -> { guard.refused(b.address, b.user, password); CardState.NeedsLogin }
+                is BoardClient.Login.TooManyAttempts -> { guard.wait(b.address, r.retryAfterSeconds); CardState.Throttled }
+                is BoardClient.Login.Refused -> CardState.Refused(r.message)
                 else -> CardState.Offline
             }
         }
@@ -109,7 +129,7 @@ fun HomeScreen(
                 relocationTried = true
                 missing.forEach { states[it.board.id] = CardState.Locating }
                 val found = discovery.search().last().boards.map { it.address }
-                val moved = Relocator(client).match(found, missing, boards.map { it.address }.toSet())
+                val moved = Relocator(client, guard).match(found, missing, boards.map { it.address }.toSet())
                 missing.filter { it.board.id !in moved }.forEach { states[it.board.id] = CardState.Offline }
                 // Saving a new address changes `boards`, which restarts this loop.
                 moved.forEach { (id, address) -> repo.updateAddress(id, address) }
@@ -119,14 +139,42 @@ fun HomeScreen(
         }
     }
 
-    fun act(b: SavedBoard, change: BoardClient.Blocking) {
+    LaunchedEffect(states.values.any { it == CardState.Throttled }) {
+        while (states.values.any { it == CardState.Throttled }) {
+            delay(1000)
+            tick++
+            boards.filter { states[it.id] == CardState.Throttled && guard.secondsLeft(it.address) == 0 }
+                .forEach { launch { refresh(it) } }
+        }
+    }
+
+    /** Sends a change with the saved login, then shows what happened. */
+    fun act(b: SavedBoard, done: String? = null, call: suspend (String) -> BoardClient.Result) {
         scope.launch {
             if (!unlock(b)) return@launch
             val password = repo.password(b.id) ?: return@launch
-            client.setBlocking(b.address, b.user, password, change)?.let { message = strings.actionFailed.fill(it) }
+            if (guard.wasRefused(b.address, b.user, password)) {
+                message = strings.needsLogin
+                return@launch
+            }
+            if (!guard.maySend(b.address, b.user, password)) {
+                message = strings.tooManyAttempts.fill(guard.secondsLeft(b.address))
+                return@launch
+            }
+            message = when (val r = call(password)) {
+                is BoardClient.Result.Ok -> done
+                is BoardClient.Result.Failed -> strings.actionFailed.fill(r.reason)
+                is BoardClient.Result.TooManyAttempts -> {
+                    guard.wait(b.address, r.retryAfterSeconds)
+                    strings.tooManyAttempts.fill(r.retryAfterSeconds)
+                }
+            }
             refresh(b)
         }
     }
+
+    fun act(b: SavedBoard, change: BoardClient.Blocking) =
+        act(b) { password -> client.setBlocking(b.address, b.user, password, change) }
 
     Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
@@ -148,6 +196,7 @@ fun HomeScreen(
                     BoardCard(
                         board = b,
                         state = states[b.id] ?: CardState.Checking,
+                        waitSeconds = tick.let { guard.secondsLeft(b.address) },
                         strings = strings,
                         onOpen = { onOpen(b) },
                         onPause = { pauseFor = b },
@@ -178,8 +227,33 @@ fun HomeScreen(
             title = { Text(b.name, fontSize = 17.sp) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val st = (states[b.id] as? CardState.Online)?.status
+                    if (st != null && st.firmware.available && st.firmware.latest.isNotEmpty() && !st.firmware.installing) {
+                        TextButton(onClick = { menuFor = null; installFor = b to st.firmware.latest }, modifier = Modifier.testTag("menu-install")) {
+                            Text(strings.menuInstall.fill(st.firmware.latest), color = Tokens.warn, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                    if (st != null && !st.firmware.installing) {
+                        TextButton(onClick = {
+                            menuFor = null
+                            act(b, strings.checkStarted.fill(b.name)) { pw -> client.checkFirmware(b.address, b.user, pw) }
+                        }, modifier = Modifier.testTag("menu-check")) {
+                            Text(strings.menuCheck, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
                     TextButton(onClick = { menuFor = null; wakeFor = b }, modifier = Modifier.testTag("menu-pocketwake")) {
                         Text(strings.pwMenu, modifier = Modifier.fillMaxWidth())
+                    }
+                    // Firmware 0.6 and later report why they last started.
+                    if (st != null && st.lastRestart.isNotEmpty()) {
+                        TextButton(onClick = { menuFor = null; restartsFor = b }, modifier = Modifier.testTag("menu-restarts")) {
+                            Text(strings.menuRestarts, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                    if (st != null) {
+                        TextButton(onClick = { menuFor = null; restartFor = b }, modifier = Modifier.testTag("menu-restart")) {
+                            Text(strings.menuRestart, modifier = Modifier.fillMaxWidth())
+                        }
                     }
                     TextButton(onClick = { menuFor = null; forgetFor = b }, modifier = Modifier.testTag("menu-forget")) {
                         Text(strings.forget, color = Tokens.bad, modifier = Modifier.fillMaxWidth())
@@ -198,6 +272,48 @@ fun HomeScreen(
             client = client,
             openPocketWake = openPocketWake,
             onDone = { done -> wakeFor = null; done?.let { message = it } },
+        )
+    }
+    installFor?.let { (b, version) ->
+        AlertDialog(
+            onDismissRequest = { installFor = null },
+            containerColor = Tokens.s1,
+            title = { Text(strings.menuInstall.fill(version), fontSize = 17.sp) },
+            text = { Text(strings.installText.fill(version), fontSize = 14.sp) },
+            confirmButton = {
+                TextButton(onClick = {
+                    installFor = null
+                    act(b, strings.installStarted.fill(b.name)) { pw -> client.installFirmware(b.address, b.user, pw) }
+                }, modifier = Modifier.testTag("install-confirm")) { Text(strings.installConfirm) }
+            },
+            dismissButton = { TextButton(onClick = { installFor = null }) { Text(strings.cancel) } },
+        )
+    }
+    restartFor?.let { b ->
+        AlertDialog(
+            onDismissRequest = { restartFor = null },
+            containerColor = Tokens.s1,
+            title = { Text(b.name, fontSize = 17.sp) },
+            text = { Text(strings.restartText, fontSize = 14.sp) },
+            confirmButton = {
+                TextButton(onClick = {
+                    restartFor = null
+                    act(b, strings.restartStarted.fill(b.name)) { pw -> client.reboot(b.address, b.user, pw) }
+                }, modifier = Modifier.testTag("restart-confirm")) { Text(strings.menuRestart) }
+            },
+            dismissButton = { TextButton(onClick = { restartFor = null }) { Text(strings.cancel) } },
+        )
+    }
+    restartsFor?.let { b ->
+        RestartsDialog(
+            title = "${b.name} · ${strings.menuRestarts}",
+            strings = strings,
+            load = {
+                val password = repo.password(b.id)
+                if (password != null && guard.maySend(b.address, b.user, password)) client.restarts(b.address, b.user, password)
+                else null
+            },
+            onDismiss = { restartsFor = null },
         )
     }
     forgetFor?.let { b ->
@@ -222,6 +338,7 @@ fun HomeScreen(
 private fun BoardCard(
     board: SavedBoard,
     state: CardState,
+    waitSeconds: Int,
     strings: Strings,
     onOpen: () -> Unit,
     onPause: () -> Unit,
@@ -234,11 +351,17 @@ private fun BoardCard(
     val (dot, tag, tagColor) = when (state) {
         is CardState.Online -> Triple(
             if (st!!.dns.blocking) Tokens.ok else Tokens.warn,
-            if (st.firmware.available && st.firmware.latest.isNotEmpty()) strings.updateTag.fill(st.firmware.latest) else strings.online,
-            if (st.firmware.available) Tokens.warn else Tokens.ok,
+            when {
+                st.firmware.installing -> strings.installingTag
+                st.firmware.available && st.firmware.latest.isNotEmpty() -> strings.updateTag.fill(st.firmware.latest)
+                else -> strings.online
+            },
+            if (st.firmware.available || st.firmware.installing) Tokens.warn else Tokens.ok,
         )
         CardState.Locked -> Triple(Tokens.ok, strings.online, Tokens.ok)
         CardState.NeedsLogin -> Triple(Tokens.warn, strings.online, Tokens.warn)
+        CardState.Throttled -> Triple(Tokens.bad, strings.waitTag.fill(waitSeconds), Tokens.bad)
+        is CardState.Refused -> Triple(Tokens.warn, strings.online, Tokens.warn)
         CardState.Locating -> Triple(Tokens.line, strings.lookingForIt, Tokens.muted)
         CardState.Offline -> Triple(Tokens.line, strings.offline, Tokens.muted)
         CardState.Checking -> Triple(Tokens.line, strings.checking, Tokens.muted)
@@ -256,7 +379,7 @@ private fun BoardCard(
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Dot(dot)
             Text(board.name, color = Tokens.text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 170.dp))
             Tag(tag, tagColor)
             Box(Modifier.weight(1f))
             TextButton(onClick = onMenu, modifier = Modifier.testTag("menu-${board.id}")) { Text("⋯", color = Tokens.muted, fontSize = 18.sp) }
@@ -281,8 +404,24 @@ private fun BoardCard(
                 )
             }
         }
+        if (st != null) {
+            val warnings = listOfNotNull(
+                strings.factoryPassword.takeIf { st.defaultPassword },
+                strings.listUpdateFailed.fill(st.update.message.ifEmpty { "?" }).takeIf { st.update.failed },
+                strings.weakSignal.fill(st.wifi.rssi).takeIf { st.wifi.weakSignal },
+            )
+            // A crash, watchdog or power dip in the last day is worth a red line.
+            if (st.unexpectedRestart && st.uptime in 0 until 86_400) {
+                Text(strings.restartWarning.fill(formatDuration(st.uptime), st.lastRestart), color = Tokens.bad, fontSize = 12.sp)
+            }
+            warnings.forEach { Text(it, color = Tokens.warn, fontSize = 12.sp) }
+        }
         if (state == CardState.NeedsLogin) Text(strings.needsLogin, color = Tokens.warn, fontSize = 12.sp)
-        if (state != CardState.Offline && state != CardState.Locating && state != CardState.Checking) {
+        if (state == CardState.Throttled) Text(strings.tooManyAttempts.fill(waitSeconds), color = Tokens.bad, fontSize = 12.sp)
+        if (state is CardState.Refused) Text(strings.refused.fill(state.message), color = Tokens.warn, fontSize = 12.sp)
+        val canOpen = state != CardState.Offline && state != CardState.Locating && state != CardState.Checking &&
+            state != CardState.Throttled
+        if (canOpen) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(end = 10.dp, top = 4.dp)) {
                 Button(onClick = onOpen, modifier = Modifier.weight(1f).testTag("open-${board.id}")) { Text(strings.open) }
                 if (st != null) {

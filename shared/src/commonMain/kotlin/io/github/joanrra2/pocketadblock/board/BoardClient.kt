@@ -6,11 +6,15 @@ import io.ktor.client.plugins.timeout
 import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
 import io.ktor.http.parameters
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.io.encoding.Base64
 
 /**
@@ -38,6 +42,20 @@ class BoardClient(engineClient: HttpClient, private val logFailures: Boolean = f
         data object NotBoard : Login
         data object NotLocal : Login
         data class Unreachable(val reason: String) : Login
+        /**
+         * The board answered 429 after too many wrong passwords: nothing may be sent to it
+         * with a password for [retryAfterSeconds] (its Retry-After header).
+         */
+        data class TooManyAttempts(val retryAfterSeconds: Int) : Login
+        /** The board refused the request with its own message (for example a 403). */
+        data class Refused(val message: String) : Login
+    }
+
+    /** What a change (POST) gave. */
+    sealed interface Result {
+        data class Ok(val message: String) : Result
+        data class Failed(val reason: String) : Result
+        data class TooManyAttempts(val retryAfterSeconds: Int) : Result
     }
 
     /**
@@ -65,7 +83,9 @@ class BoardClient(engineClient: HttpClient, private val logFailures: Boolean = f
     }
 
     /** Checks a user and password with GET /api/status and returns the board's state. */
-    suspend fun login(address: BoardAddress, user: String, password: String, timeoutMs: Long = 4000): Login {
+    // From firmware 0.6 the first check after a restart or password change takes ~1 s
+    // (PBKDF2); the default timeout leaves room for it on a slow Wi-Fi.
+    suspend fun login(address: BoardAddress, user: String, password: String, timeoutMs: Long = 5000): Login {
         if (!address.isLocal) return Login.NotLocal
         return try {
             val r = http.get(address.url("/api/status")) {
@@ -79,12 +99,46 @@ class BoardClient(engineClient: HttpClient, private val logFailures: Boolean = f
             when (r.status.value) {
                 200 -> runCatching { Login.Ok(BoardStatus.parse(r.bodyAsText())) }.getOrElse { Login.NotBoard }
                 401 -> if (isSinkholeRealm(r.headers[HttpHeaders.WWWAuthenticate])) Login.WrongCredentials else Login.NotBoard
-                else -> Login.NotBoard
+                429 -> Login.TooManyAttempts(retryAfter(r))
+                else -> boardMessage(r)?.let { Login.Refused(it) } ?: Login.NotBoard
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Login.Unreachable(e.message ?: e::class.simpleName ?: "error")
+        }
+    }
+
+    /** GET /api/restarts (firmware 0.6): the board's clock and its restarts, newest first. */
+    @kotlinx.serialization.Serializable
+    data class Restarts(val time: Long = 0, val items: List<Restart> = emptyList()) {
+        @kotlinx.serialization.Serializable
+        data class Restart(
+            /** Unix seconds; 0 when the clock wasn't set yet. */
+            val at: Long = 0,
+            /** Seconds it ran after this start (the first item: the current uptime). */
+            val ranFor: Long = 0,
+            val why: String = "",
+            /** Crash, watchdog or power dip. */
+            val unexpected: Boolean = false,
+            val version: String = "",
+        )
+    }
+
+    /** Reads the restart history, or null when the board can't be read or is older than 0.6. */
+    suspend fun restarts(address: BoardAddress, user: String, password: String): Restarts? {
+        if (!address.isLocal) return null
+        return try {
+            val r = http.get(address.url("/api/restarts")) {
+                header(HttpHeaders.Authorization, basicAuth(user, password))
+                timeout { requestTimeoutMillis = 5000; connectTimeoutMillis = 4000 }
+            }
+            if (r.status.value != 200) null
+            else settingsJson.decodeFromString(Restarts.serializer(), r.bodyAsText())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -118,38 +172,74 @@ class BoardClient(engineClient: HttpClient, private val logFailures: Boolean = f
         data class Pause(val minutes: Int) : Blocking
     }
 
-    /** Changes blocking. Returns null on success, or the reason it failed. */
-    suspend fun setBlocking(address: BoardAddress, user: String, password: String, change: Blocking): String? {
-        if (!address.isLocal) return "not a local address"
+    /** Changes blocking. */
+    suspend fun setBlocking(address: BoardAddress, user: String, password: String, change: Blocking): Result =
+        post(address, user, password, "/api/blocking") {
+            when (change) {
+                Blocking.On -> append("mode", "on")
+                Blocking.Off -> append("mode", "off")
+                is Blocking.Pause -> {
+                    append("mode", "pause")
+                    append("minutes", change.minutes.toString())
+                }
+            }
+        }
+
+    /** Asks the board to look for a firmware update now (POST /api/firmware/check). */
+    suspend fun checkFirmware(address: BoardAddress, user: String, password: String): Result =
+        post(address, user, password, "/api/firmware/check")
+
+    /**
+     * Installs the update the board found (POST /api/firmware/install). The board
+     * downloads it, checks it and restarts by itself.
+     */
+    suspend fun installFirmware(address: BoardAddress, user: String, password: String): Result =
+        post(address, user, password, "/api/firmware/install")
+
+    /** Restarts the board (POST /api/reboot). */
+    suspend fun reboot(address: BoardAddress, user: String, password: String): Result =
+        post(address, user, password, "/api/reboot")
+
+    private suspend fun post(
+        address: BoardAddress,
+        user: String,
+        password: String,
+        path: String,
+        form: io.ktor.http.ParametersBuilder.() -> Unit = {},
+    ): Result {
+        if (!address.isLocal) return Result.Failed("not a local address")
         return try {
-            val r = http.submitForm(
-                url = address.url("/api/blocking"),
-                formParameters = parameters {
-                    when (change) {
-                        Blocking.On -> append("mode", "on")
-                        Blocking.Off -> append("mode", "off")
-                        is Blocking.Pause -> {
-                            append("mode", "pause")
-                            append("minutes", change.minutes.toString())
-                        }
-                    }
-                },
-            ) {
+            val r = http.submitForm(url = address.url(path), formParameters = parameters(form)) {
                 header(HttpHeaders.Authorization, basicAuth(user, password))
                 // The firmware refuses changes without it (CSRF guard, web_server.cpp).
                 header("X-Requested-With", "sinkhole")
-                timeout { requestTimeoutMillis = 5000; connectTimeoutMillis = 4000 }
+                timeout { requestTimeoutMillis = 8000; connectTimeoutMillis = 4000 }
             }
-            if (r.status.isSuccess()) null else "HTTP ${r.status.value}: ${r.bodyAsText().take(120)}"
+            when {
+                r.status.isSuccess() -> Result.Ok(boardMessage(r) ?: "")
+                r.status.value == 429 -> Result.TooManyAttempts(retryAfter(r))
+                else -> Result.Failed(boardMessage(r) ?: "HTTP ${r.status.value}")
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            e.message ?: e::class.simpleName ?: "error"
+            Result.Failed(e.message ?: e::class.simpleName ?: "error")
         }
     }
 
     companion object {
         private val settingsJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
+        /** Seconds to wait from a Retry-After header; 60 when it is missing or a date. */
+        fun retryAfterSeconds(header: String?): Int =
+            header?.trim()?.toIntOrNull()?.coerceIn(1, 24 * 3600) ?: 60
+
+        private fun retryAfter(r: HttpResponse) = retryAfterSeconds(r.headers[HttpHeaders.RetryAfter])
+
+        /** The `message` of the board's JSON answer (`{"ok":false,"message":"..."}`), if any. */
+        private suspend fun boardMessage(r: HttpResponse): String? = runCatching {
+            Json.parseToJsonElement(r.bodyAsText()).jsonObject["message"]?.jsonPrimitive?.content
+        }.getOrNull()?.takeIf { it.isNotBlank() }
 
         fun isSinkholeRealm(header: String?): Boolean {
             if (header == null || !header.trim().startsWith("Basic", ignoreCase = true)) return false

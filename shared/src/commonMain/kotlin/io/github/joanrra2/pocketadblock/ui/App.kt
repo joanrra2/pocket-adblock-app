@@ -18,6 +18,7 @@ import io.github.joanrra2.pocketadblock.discovery.FoundBoard
 import io.github.joanrra2.pocketadblock.discovery.FoundVia
 import io.github.joanrra2.pocketadblock.platform.Platform
 import io.github.joanrra2.pocketadblock.store.BoardRepository
+import io.github.joanrra2.pocketadblock.store.LoginGuard
 import io.github.joanrra2.pocketadblock.store.SavedBoard
 import io.github.joanrra2.pocketadblock.wake.PocketWakeLink
 import kotlinx.coroutines.launch
@@ -44,6 +45,7 @@ fun App(platform: Platform, modifier: Modifier = Modifier) {
     val client = remember { BoardClient(platform.httpClient(), logFailures = true) }
     val discovery = remember { Discovery(client, platform.mdns, platform::localNetwork) }
     val repo = remember { BoardRepository(platform.settings, platform.secrets) }
+    val guard = remember { LoginGuard() }
     val boards by repo.boards.collectAsState()
     var screen by remember { mutableStateOf(if (repo.boards.value.isEmpty()) Screen.Search else Screen.Home) }
     var session by remember { mutableStateOf<Session?>(null) }
@@ -60,16 +62,30 @@ fun App(platform: Platform, modifier: Modifier = Modifier) {
         scope.launch {
             if (!unlock(board)) return@launch
             val password = repo.password(board.id)
-            if (password == null) {
+            if (password == null || guard.wasRefused(board.address, board.user, password)) {
+                if (password != null) notice = strings.loginAgain
                 loginFor = LoginTarget(board.address, setup = false, saved = board)
                 return@launch
             }
+            if (!guard.maySend(board.address, board.user, password)) {
+                notice = strings.tooManyAttempts.fill(guard.secondsLeft(board.address))
+                return@launch
+            }
             when (val r = client.login(board.address, board.user, password)) {
-                is BoardClient.Login.Ok -> session = Session(board.address, board.user, password, r.status)
+                is BoardClient.Login.Ok -> {
+                    guard.accepted(board.address, board.user, password)
+                    session = Session(board.address, board.user, password, r.status)
+                }
                 BoardClient.Login.WrongCredentials -> {
+                    guard.refused(board.address, board.user, password)
                     notice = strings.loginAgain
                     loginFor = LoginTarget(board.address, setup = false, saved = board)
                 }
+                is BoardClient.Login.TooManyAttempts -> {
+                    guard.wait(board.address, r.retryAfterSeconds)
+                    notice = strings.tooManyAttempts.fill(r.retryAfterSeconds)
+                }
+                is BoardClient.Login.Refused -> notice = strings.refused.fill(r.message)
                 is BoardClient.Login.Unreachable -> notice = strings.unreachable.fill(r.reason)
                 BoardClient.Login.NotBoard, BoardClient.Login.NotLocal -> notice = strings.notABoard
             }
@@ -118,6 +134,7 @@ fun App(platform: Platform, modifier: Modifier = Modifier) {
                     strings = strings,
                     onBack = { session = null },
                     onAuthRejected = {
+                        guard.refused(current.address, current.user, current.password)
                         session = null
                         notice = strings.loginAgain
                         val saved = repo.find(current.address, current.status.hostname)
@@ -141,6 +158,7 @@ fun App(platform: Platform, modifier: Modifier = Modifier) {
                     client = client,
                     discovery = discovery,
                     repo = repo,
+                    guard = guard,
                     notice = notice,
                     unlock = ::unlock,
                     onOpen = ::openSaved,
@@ -153,6 +171,7 @@ fun App(platform: Platform, modifier: Modifier = Modifier) {
                     target = target,
                     strings = strings,
                     client = client,
+                    guard = guard,
                     canAuthenticate = platform.canAuthenticate(),
                     onDismiss = { loginFor = null },
                     onLoggedIn = { loggedIn(target, it) },
