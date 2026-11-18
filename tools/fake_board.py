@@ -8,7 +8,7 @@ like the real web UI, so it shows whether the app's web view logs in by itself.
 Test-only credentials (never a real board's): admin / test-password-123
 
 Like the coming firmware login limit, 3 different wrong passwords in a row make it
-answer 429 with Retry-After (10 s, then doubling); the same wrong password repeated
+answer 429 with Retry-After (30 s, then doubling); the same wrong password repeated
 does not count. It also offers an update (0.5.2) to try the app's install and restart.
 
     python tools/fake_board.py [port]          # default 8080
@@ -51,7 +51,7 @@ STATUS = {"version": "0.4.2", "edition": "pro", "hostname": "fake-board", "uptim
 # Login limit state: the different wrong passwords seen, and when logins open again.
 WRONG = set()
 LOCKED_UNTIL = 0.0
-LOCK_SECONDS = 10
+LOCK_SECONDS = 30
 
 
 # GET /api/settings (only the MQTT part matters to the app). A made-up test broker.

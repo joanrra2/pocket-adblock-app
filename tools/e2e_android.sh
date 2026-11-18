@@ -45,6 +45,15 @@ wait_for() {
   fail "not on screen: $1"
 }
 
+# Waits up to 90 s for a UI element matching the grep pattern to go away.
+wait_gone() {
+  for _ in $(seq 1 90); do
+    dump | grep -q -- "$1" || return 0
+    sleep 1
+  done
+  fail "still on screen: $1"
+}
+
 # Taps the last element matching the grep pattern, retrying for up to 30 s (a dump can
 # miss an element for a moment while the screen recomposes).
 tap() {
@@ -122,7 +131,7 @@ limited=$(grep -c "^429 " "$OUT/fake_board.log" || true)
 echo "wrong passwords sent: $wrong, refused with 429: $limited"
 [ "$wrong" -eq 3 ] || fail "expected 3 wrong passwords sent (one repeat skipped), got $wrong"
 [ "$limited" -eq 1 ] || fail "expected one 429, got $limited"
-sleep 12   # the fake board's first wait is 10 s; Connect comes back by itself
+wait_gone 'Too many wrong passwords'   # the fake board's first wait is 30 s; Connect comes back by itself
 clear_field
 type_password "test-password-123"
 adb shell input keyevent KEYCODE_ENTER
