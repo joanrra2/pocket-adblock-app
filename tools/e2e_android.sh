@@ -147,13 +147,15 @@ shot "2-board-list"
 step "install the offered update, then restart"
 tap 'resource-id="menu-fake-board"'
 tap 'text="Install update 0.5.2"'
-tap 'resource-id="install-confirm"'
+# Dialogs don't expose test tags to UI Automator: tap by text.
+tap 'text="Install"'
 wait_for 'is installing the update'
 wait_for 'text="installing update"'
 grep -q "200 POST /api/firmware/install" "$OUT/fake_board.log" || fail "install was not sent"
 tap 'resource-id="menu-fake-board"'
-tap 'resource-id="menu-restart"'
-tap 'resource-id="restart-confirm"'
+tap 'text="Restart"'
+wait_for 'Restart the board?'
+tap 'text="Restart"'
 wait_for 'is restarting'
 wait_for 'v0.5.2'
 shot "2b-updated"
