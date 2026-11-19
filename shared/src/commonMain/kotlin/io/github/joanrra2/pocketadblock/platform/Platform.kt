@@ -27,6 +27,12 @@ interface Platform {
      */
     fun openPocketWake(link: String): Boolean
 
+    /**
+     * Opens [appLink] (`ntfy://…`) in the ntfy app when it is installed (Android), otherwise
+     * [webLink] in the browser. True when the ntfy app took it.
+     */
+    fun openNtfy(appLink: String, webLink: String): Boolean
+
     /** Plain app settings (the list of saved boards). Not for passwords. */
     val settings: KeyValueStore
 

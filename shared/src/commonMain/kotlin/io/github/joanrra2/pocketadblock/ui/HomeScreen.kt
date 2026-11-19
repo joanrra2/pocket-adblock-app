@@ -81,6 +81,7 @@ fun HomeScreen(
     onOpen: (SavedBoard) -> Unit,
     onAdd: () -> Unit,
     openPocketWake: (String) -> Boolean,
+    openNtfy: (appLink: String, webLink: String) -> Boolean,
 ) {
     val boards by repo.boards.collectAsState()
     val states = remember { mutableStateMapOf<String, CardState>() }
@@ -92,6 +93,10 @@ fun HomeScreen(
     var installFor by remember { mutableStateOf<Pair<SavedBoard, String>?>(null) }
     var restartFor by remember { mutableStateOf<SavedBoard?>(null) }
     var restartsFor by remember { mutableStateOf<SavedBoard?>(null) }
+    var alertsFor by remember { mutableStateOf<SavedBoard?>(null) }
+    // Whether the board in the open menu can send alerts (GET /api/settings notifyAvailable;
+    // false on Lite builds and older firmware), read each time the menu opens.
+    var menuAlerts by remember { mutableStateOf(false) }
     // Ticks every second while a board asks to wait, so its countdown moves.
     var tick by remember { mutableStateOf(0) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -220,6 +225,14 @@ fun HomeScreen(
             act(b, change)
         }
     }
+    LaunchedEffect(menuFor?.id) {
+        menuAlerts = false
+        val b = menuFor ?: return@LaunchedEffect
+        if (states[b.id] !is CardState.Online) return@LaunchedEffect
+        val password = repo.password(b.id) ?: return@LaunchedEffect
+        if (!guard.maySend(b.address, b.user, password)) return@LaunchedEffect
+        menuAlerts = client.mqttSettings(b.address, b.user, password)?.notifyAvailable == true
+    }
     menuFor?.let { b ->
         AlertDialog(
             onDismissRequest = { menuFor = null },
@@ -243,6 +256,11 @@ fun HomeScreen(
                     }
                     TextButton(onClick = { menuFor = null; wakeFor = b }, modifier = Modifier.testTag("menu-pocketwake")) {
                         Text(strings.pwMenu, modifier = Modifier.fillMaxWidth())
+                    }
+                    if (st != null && menuAlerts) {
+                        TextButton(onClick = { menuFor = null; alertsFor = b }, modifier = Modifier.testTag("menu-alerts")) {
+                            Text(strings.menuAlerts, modifier = Modifier.fillMaxWidth())
+                        }
                     }
                     // Firmware 0.6 and later report why they last started.
                     if (st != null && st.lastRestart.isNotEmpty()) {
@@ -314,6 +332,23 @@ fun HomeScreen(
                 else null
             },
             onDismiss = { restartsFor = null },
+        )
+    }
+    alertsFor?.let { b ->
+        AlertsDialog(
+            title = "${b.name} · ${strings.menuAlerts}",
+            strings = strings,
+            load = {
+                val password = repo.password(b.id)
+                if (password != null && guard.maySend(b.address, b.user, password)) client.notify(b.address, b.user, password)
+                else null
+            },
+            openNtfy = { app, web -> openNtfy(app, web) },
+            onTest = {
+                alertsFor = null
+                act(b, strings.alertsTestSent.fill(b.name)) { pw -> client.testNotify(b.address, b.user, pw) }
+            },
+            onDismiss = { alertsFor = null },
         )
     }
     forgetFor?.let { b ->

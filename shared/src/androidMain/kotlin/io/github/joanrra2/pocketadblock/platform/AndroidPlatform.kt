@@ -70,6 +70,14 @@ class AndroidPlatform(private val activity: FragmentActivity) : Platform {
         return false
     }
 
+    override fun openNtfy(appLink: String, webLink: String): Boolean {
+        // Only the ntfy app handles ntfy:// links; without it startActivity throws.
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(appLink)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (runCatching { context.startActivity(intent) }.isSuccess) return true
+        openInBrowser(webLink)
+        return false
+    }
+
     // Fingerprint/face, or the screen lock PIN/pattern where Android allows combining them.
     private val authenticators: Int
         get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) BIOMETRIC_WEAK or DEVICE_CREDENTIAL else BIOMETRIC_WEAK

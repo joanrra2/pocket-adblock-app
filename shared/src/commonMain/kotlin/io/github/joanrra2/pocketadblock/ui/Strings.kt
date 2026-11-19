@@ -110,6 +110,21 @@ class Strings(
     val timeUnknown: String,
     val ranFor: String,
     val restartWarning: String,
+    // Phone alerts (firmware 0.6 Pro: ntfy / Telegram)
+    val menuAlerts: String,
+    val alertsIntro: String,
+    val alertsNotSet: String,
+    val alertsNtfy: String,
+    val alertsTokenNote: String,
+    val alertsSubscribe: String,
+    val alertsTelegram: String,
+    val alertsTelegramHere: String,
+    val alertsLastOk: String,
+    val alertsLastFailed: String,
+    val alertsNoneYet: String,
+    val alertsTest: String,
+    val alertsTestSent: String,
+    val alertsUnavailable: String,
 ) {
     companion object {
         fun forLanguage(code: String): Strings = if (code.lowercase().startsWith("es")) ES else EN
@@ -214,6 +229,20 @@ class Strings(
             timeUnknown = "time unknown",
             ranFor = "ran {0}",
             restartWarning = "Restarted unexpectedly {0} ago: {1}",
+            menuAlerts = "Phone alerts",
+            alertsIntro = "The board can tell you when it restarts, a PC wakes or goes offline, or an update is installed. You choose what in the board's Settings → Notifications.",
+            alertsNotSet = "Alerts aren't set up on this board yet. Open the board and go to Settings → Notifications.",
+            alertsNtfy = "ntfy topic",
+            alertsTokenNote = "This topic needs an access token: add the same user or token in the ntfy app.",
+            alertsSubscribe = "Subscribe in ntfy",
+            alertsTelegram = "Telegram",
+            alertsTelegramHere = "Alerts go to the Telegram chat set on the board.",
+            alertsLastOk = "Last alert sent {0} ago",
+            alertsLastFailed = "Last alert failed {0} ago: {1}",
+            alertsNoneYet = "No alert sent since the board started.",
+            alertsTest = "Send a test alert",
+            alertsTestSent = "{0} sent a test alert.",
+            alertsUnavailable = "Couldn't read this board's alert settings.",
         )
 
         val ES = Strings(
@@ -316,6 +345,20 @@ class Strings(
             timeUnknown = "hora desconocida",
             ranFor = "funcionó {0}",
             restartWarning = "Reinicio inesperado hace {0}: {1}",
+            menuAlerts = "Avisos en el móvil",
+            alertsIntro = "La placa puede avisarte cuando se reinicia, un PC se enciende o se apaga, o se instala una actualización. Lo eliges en Ajustes → Notificaciones de la placa.",
+            alertsNotSet = "Los avisos aún no están configurados en esta placa. Ábrela y ve a Ajustes → Notificaciones.",
+            alertsNtfy = "Tema de ntfy",
+            alertsTokenNote = "Este tema necesita un token de acceso: añade el mismo usuario o token en la app ntfy.",
+            alertsSubscribe = "Suscribirse en ntfy",
+            alertsTelegram = "Telegram",
+            alertsTelegramHere = "Los avisos van al chat de Telegram configurado en la placa.",
+            alertsLastOk = "Último aviso enviado hace {0}",
+            alertsLastFailed = "El último aviso falló hace {0}: {1}",
+            alertsNoneYet = "Ningún aviso enviado desde que arrancó la placa.",
+            alertsTest = "Enviar un aviso de prueba",
+            alertsTestSent = "{0} ha enviado un aviso de prueba.",
+            alertsUnavailable = "No se pudieron leer los avisos de esta placa.",
         )
     }
 }

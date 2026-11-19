@@ -12,6 +12,7 @@ Retry-After (5 s, then doubling up to 600 s; FAKE_LOCK_SECONDS sets the first wa
 the same wrong password repeated does not count, and the right password keeps working
 during the wait. It reports a crash as its last restart, keeps a restart history
 (/api/restarts) and offers an update (0.5.2) to try the app's install and restart.
+It is a Pro build with alerts set up on ntfy (/api/notify) to try the app's Phone alerts.
 
     python tools/fake_board.py [port]          # default 8080
     adb reverse tcp:8080 tcp:8080              # phone over USB, then type 127.0.0.1:8080
@@ -66,7 +67,15 @@ WRONG_LIMIT = 5
 
 # GET /api/settings (only the MQTT part matters to the app). A made-up test broker.
 SETTINGS = {"hostname": "fake-board", "mqttUri": "mqtts://broker.example.test:8883",
-            "mqttUser": "board", "mqttPrefix": "sinkhole", "haDiscovery": True}
+            "mqttUser": "board", "mqttPrefix": "sinkhole", "haDiscovery": True, "notifyAvailable": True}
+
+# GET /api/notify (firmware 0.6 Pro). A made-up topic; nothing is ever sent anywhere.
+NOTIFY = {"ntfyServer": "https://ntfy.sh", "ntfyTopic": "fake-board-test", "ntfyTokenSet": False,
+          "tgTokenSet": False, "tgChat": "", "events": 31, "commands": False,
+          "ntfy": {"configured": True, "ok": True, "ago": -1, "error": ""},
+          "telegram": {"configured": False, "ok": False, "ago": -1, "error": ""},
+          "lastCommand": "", "lastCommandAgo": -1, "dropped": 0}
+NOTIFY_SENT_AT = 0.0
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -103,6 +112,9 @@ class Handler(BaseHTTPRequestHandler):
             print(f"200 {self.path}")
             if self.path == "/api/settings":
                 return self.send(200, json.dumps(SETTINGS).encode(), "application/json")
+            if self.path == "/api/notify":
+                NOTIFY["ntfy"]["ago"] = int(time.monotonic() - NOTIFY_SENT_AT) if NOTIFY_SENT_AT else -1
+                return self.send(200, json.dumps(NOTIFY).encode(), "application/json")
             if self.path == "/api/restarts":
                 RESTARTS[0]["ranFor"] = STATUS["uptime"]
                 body = {"time": int(time.time()), "items": RESTARTS}
@@ -112,7 +124,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send(404, b"not found", "text/plain")
 
     def do_POST(self):
-        if self.path not in ("/api/blocking", "/api/firmware/check", "/api/firmware/install", "/api/reboot"):
+        global NOTIFY_SENT_AT
+        if self.path not in ("/api/blocking", "/api/firmware/check", "/api/firmware/install", "/api/reboot", "/api/notify"):
             return self.send(404, b"not found", "text/plain")
         if not self.check_auth():
             return
@@ -120,6 +133,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(403, b'{"ok":false,"message":"missing X-Requested-With header"}', "application/json")
         form = parse_qs(self.rfile.read(int(self.headers.get("Content-Length", 0))).decode())
         fw = STATUS["firmware"]
+        if self.path == "/api/notify":
+            if form.get("action", [""])[0] != "test":
+                return self.send(400, b'{"ok":false,"message":"unknown action"}', "application/json")
+            NOTIFY_SENT_AT = time.monotonic()
+            print("200 POST /api/notify test")
+            return self.send(200, b'{"ok":true,"message":"test sent"}', "application/json")
         if self.path == "/api/firmware/check":
             print("200 POST /api/firmware/check")
             return self.send(200, b'{"ok":true,"message":"checking for updates"}', "application/json")

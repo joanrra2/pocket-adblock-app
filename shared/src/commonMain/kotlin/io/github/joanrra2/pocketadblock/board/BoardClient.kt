@@ -126,36 +126,67 @@ class BoardClient(engineClient: HttpClient, private val logFailures: Boolean = f
     }
 
     /** Reads the restart history, or null when the board can't be read or is older than 0.6. */
-    suspend fun restarts(address: BoardAddress, user: String, password: String): Restarts? {
-        if (!address.isLocal) return null
-        return try {
-            val r = http.get(address.url("/api/restarts")) {
-                header(HttpHeaders.Authorization, basicAuth(user, password))
-                timeout { requestTimeoutMillis = 5000; connectTimeoutMillis = 4000 }
-            }
-            if (r.status.value != 200) null
-            else settingsJson.decodeFromString(Restarts.serializer(), r.bodyAsText())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            null
-        }
+    suspend fun restarts(address: BoardAddress, user: String, password: String): Restarts? =
+        getJson(address, user, password, "/api/restarts", Restarts.serializer())
+
+    /**
+     * What the app uses from GET /api/settings (the board never returns passwords).
+     * [notifyAvailable]: the build can send alerts (Pro builds of firmware 0.6 and later).
+     */
+    @kotlinx.serialization.Serializable
+    data class MqttSettings(
+        val mqttUri: String = "",
+        val mqttUser: String = "",
+        val mqttPrefix: String = "",
+        val notifyAvailable: Boolean = false,
+    )
+
+    /** Reads the settings, or null when the board can't be read. */
+    suspend fun mqttSettings(address: BoardAddress, user: String, password: String): MqttSettings? =
+        getJson(address, user, password, "/api/settings", MqttSettings.serializer())
+
+    /** GET /api/notify (firmware 0.6 Pro): where alerts go and how sending went. Tokens never come back. */
+    @kotlinx.serialization.Serializable
+    data class Notify(
+        val ntfyServer: String = "",
+        val ntfyTopic: String = "",
+        val ntfyTokenSet: Boolean = false,
+        val tgTokenSet: Boolean = false,
+        val tgChat: String = "",
+        val events: Int = 0,
+        val ntfy: Channel = Channel(),
+        val telegram: Channel = Channel(),
+    ) {
+        /** [ago]: seconds since the last attempt, -1 = none since the board started. */
+        @kotlinx.serialization.Serializable
+        data class Channel(val configured: Boolean = false, val ok: Boolean = false, val ago: Long = -1, val error: String = "")
+
+        val anyConfigured: Boolean get() = ntfy.configured || telegram.configured
     }
 
-    /** The board's MQTT settings from GET /api/settings (the board never returns the password). */
-    @kotlinx.serialization.Serializable
-    data class MqttSettings(val mqttUri: String = "", val mqttUser: String = "", val mqttPrefix: String = "")
+    /** Reads the alert settings, or null when the board can't be read or has no alerts. */
+    suspend fun notify(address: BoardAddress, user: String, password: String): Notify? =
+        getJson(address, user, password, "/api/notify", Notify.serializer())
 
-    /** Reads the MQTT settings, or null when the board can't be read. */
-    suspend fun mqttSettings(address: BoardAddress, user: String, password: String): MqttSettings? {
+    /** Sends a test alert to every channel set up on the board (POST /api/notify action=test). */
+    suspend fun testNotify(address: BoardAddress, user: String, password: String): Result =
+        post(address, user, password, "/api/notify") { append("action", "test") }
+
+    private suspend fun <T> getJson(
+        address: BoardAddress,
+        user: String,
+        password: String,
+        path: String,
+        serializer: kotlinx.serialization.KSerializer<T>,
+    ): T? {
         if (!address.isLocal) return null
         return try {
-            val r = http.get(address.url("/api/settings")) {
+            val r = http.get(address.url(path)) {
                 header(HttpHeaders.Authorization, basicAuth(user, password))
                 timeout { requestTimeoutMillis = 5000; connectTimeoutMillis = 4000 }
             }
             if (r.status.value != 200) null
-            else settingsJson.decodeFromString(MqttSettings.serializer(), r.bodyAsText())
+            else settingsJson.decodeFromString(serializer, r.bodyAsText())
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
