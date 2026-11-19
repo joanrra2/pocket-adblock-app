@@ -38,3 +38,4 @@ google-services.json
 iosApp/*.xcodeproj/
 xcuserdata/
 DerivedData/
+__pycache__/
