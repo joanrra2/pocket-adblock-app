@@ -47,6 +47,11 @@ started on the iPhone simulator in CI; not yet run on a real iPhone.
   over MQTT): a board's menu → *Set up Pocket Wake* reads its broker settings and hands
   them to the Pocket Wake app with the same setup link as the board's QR code (never a
   password). On iPhone, and without the Android app, Pocket Wake's web app opens.
+- **Phone alerts** (firmware 0.6 Pro builds, hidden on Lite): a board's menu → *Phone
+  alerts* shows where its ntfy/Telegram alerts go and whether the last one was sent,
+  subscribes the ntfy app to the board's topic in one tap (`ntfy://` link; the topic's
+  web page on iPhone or without the app), and sends a test alert. Alerts are set up in
+  the board's own Settings → Notifications.
 
 ## Build
 

@@ -37,6 +37,12 @@ class IosPlatform : Platform {
         return false
     }
 
+    // The topic's web page; from there the ntfy iPhone app or the web app can subscribe.
+    override fun openNtfy(appLink: String, webLink: String): Boolean {
+        openInBrowser(webLink)
+        return false
+    }
+
     override val settings: KeyValueStore = object : KeyValueStore {
         private val defaults = NSUserDefaults.standardUserDefaults
         override fun get(key: String): String? = defaults.stringForKey(key)

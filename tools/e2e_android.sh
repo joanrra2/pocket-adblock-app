@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end test on a running Android emulator (or phone):
 #   fake board -> Pocket AdBlock: wrong passwords hit the login limit (429), log in, save,
-#   crash warning and restart history, install the offered update and restart -> Set up
+#   crash warning, restart history and phone alerts, install the offered update and restart -> Set up
 #   Pocket Wake -> Pocket Wake opens with the board's broker filled in.
 # Usage: tools/e2e_android.sh <pocket-adblock.apk> <pocket-wake.apk> [out-dir]
 # Debug APKs by default; for release APKs set E2E_APP_PKG=io.github.joanrra2.pocketadblock
@@ -153,6 +153,17 @@ wait_for 'now, running for'
 wait_for 'text="firmware update"'
 shot "2a-restarts"
 tap 'text="Close"'
+
+step "phone alerts: the board's ntfy topic and a test alert"
+tap 'resource-id="menu-fake-board"'
+tap 'text="Phone alerts"'
+wait_for 'ntfy.sh/fake-board-test'
+wait_for 'text="Subscribe in ntfy"'
+wait_for 'No alert sent since the board started'
+shot "2b-alerts"
+tap 'text="Send a test alert"'
+wait_for 'sent a test alert'
+grep -q "200 POST /api/notify test" "$OUT/fake_board.log" || fail "the test alert was not sent"
 
 step "install the offered update, then restart"
 tap 'resource-id="menu-fake-board"'

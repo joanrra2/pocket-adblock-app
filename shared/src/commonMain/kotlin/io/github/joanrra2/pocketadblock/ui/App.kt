@@ -164,6 +164,7 @@ fun App(platform: Platform, modifier: Modifier = Modifier) {
                     onOpen = ::openSaved,
                     onAdd = { notice = null; screen = Screen.Search },
                     openPocketWake = platform::openPocketWake,
+                    openNtfy = platform::openNtfy,
                 )
             }
             loginFor?.let { target ->

@@ -156,4 +156,44 @@ class BoardClientTest {
         assertEquals(null, BoardClient(HttpClient(MockEngine { respond("not found", HttpStatusCode.NotFound) }))
             .restarts(board, TEST_USER, TEST_PASSWORD))
     }
+
+    @Test
+    fun readsAlertsAndSendsATest() = runTest {
+        var testForm: String? = null
+        val c = BoardClient(HttpClient(MockEngine { req ->
+            when (req.url.encodedPath) {
+                // Shape of firmware 0.6 web_server.cpp getStatus / getNotify.
+                "/api/settings" -> respond("""{"hostname":"sinkhole","mqttUri":"","notifyAvailable":true}""", HttpStatusCode.OK)
+                "/api/notify" -> if (req.method.value == "GET") respond(
+                    """{"ntfyServer":"https://ntfy.sh","ntfyTopic":"pocket-x1y2","ntfyTokenSet":false,"tgTokenSet":true,
+                       "tgChat":"12345","events":31,"commands":false,
+                       "ntfy":{"configured":true,"ok":true,"ago":120,"error":""},
+                       "telegram":{"configured":true,"ok":false,"ago":60,"error":"HTTP 401"},
+                       "lastCommand":"","lastCommandAgo":-1,"dropped":0}""",
+                    HttpStatusCode.OK,
+                ) else {
+                    testForm = (req.body as io.ktor.http.content.OutgoingContent.ByteArrayContent).bytes().decodeToString()
+                    respond("""{"ok":true,"message":"test sent"}""", HttpStatusCode.OK)
+                }
+                else -> respond("", HttpStatusCode.NotFound)
+            }
+        }))
+        assertTrue(c.mqttSettings(board, TEST_USER, TEST_PASSWORD)!!.notifyAvailable)
+        val n = c.notify(board, TEST_USER, TEST_PASSWORD)!!
+        assertEquals("pocket-x1y2", n.ntfyTopic)
+        assertTrue(n.anyConfigured)
+        assertEquals(120, n.ntfy.ago)
+        assertFalse(n.telegram.ok)
+        assertEquals("HTTP 401", n.telegram.error)
+        assertEquals(BoardClient.Result.Ok("test sent"), c.testNotify(board, TEST_USER, TEST_PASSWORD))
+        assertEquals("action=test", testForm)
+
+        // Lite builds and older firmware: no notifyAvailable, and no /api/notify.
+        val old = BoardClient(HttpClient(MockEngine { req ->
+            if (req.url.encodedPath == "/api/settings") respond("""{"mqttUri":""}""", HttpStatusCode.OK)
+            else respond("not found", HttpStatusCode.NotFound)
+        }))
+        assertFalse(old.mqttSettings(board, TEST_USER, TEST_PASSWORD)!!.notifyAvailable)
+        assertEquals(null, old.notify(board, TEST_USER, TEST_PASSWORD))
+    }
 }

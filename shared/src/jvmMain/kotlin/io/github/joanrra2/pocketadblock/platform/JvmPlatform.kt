@@ -25,6 +25,8 @@ class JvmPlatform(private val network: LocalNetwork? = null) : Platform {
 
     override fun openPocketWake(link: String): Boolean = false
 
+    override fun openNtfy(appLink: String, webLink: String): Boolean = false
+
     override val settings: KeyValueStore = MemoryStore()
     override val secrets: KeyValueStore = MemoryStore()
 
